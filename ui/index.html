@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <title>Lazarus Exchange - Terminal</title>
+  <link rel="stylesheet" href="./sytle.css" />
+</head>
+
+<body>
+  <div id="terminal">
+    <div id="ascii-art">
+      <pre>
+              LAZARUS EXCHANGE
+</pre>
+    </div>
+
+    <div id="app">
+      <p><strong>Session ID:</strong> <span id="sessionIdDisplay"></span></p>
+      <p><strong>You are:</strong> <span id="youDisplay"></span></p>
+      <p><strong>Link for your partner:</strong></p>
+      <input id="shareLink" readonly style="width:100%" />
+      <button onclick="copySessionLink()">📎 Copy link for second user</button>
+
+      <div class="section">
+        <label>Select file:</label>
+        <input id="fileInput" type="file" />
+        <button onclick="upload()">UPLOAD</button>
+      </div>
+
+      <div class="section">
+        <button onclick="preview()">SHOW PREVIEW</button>
+        <button onclick="validate()">VALIDATE</button>
+        <button onclick="download()">DOWNLOAD</button>
+      </div>
+
+      <div class="section">
+        <label>Status:</label>
+        <pre id="statusBox">Connecting<span class="cursor">█</span></pre>
+      </div>
+    </div>
+  </div>
+
+  <script src="./script.js"></script>
+</body>
+
+</html>

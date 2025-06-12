@@ -1,0 +1,46 @@
+body {
+  background-color: black;
+  color: #00ff00;
+  font-family: 'Courier New', Courier, monospace;
+  padding: 2rem;
+}
+
+#ascii-art pre {
+  color: #00ff00;
+  text-shadow: 0 0 5px #0f0;
+}
+
+.section {
+  margin-bottom: 1.5rem;
+}
+
+input, select, button {
+  background-color: black;
+  color: #00ff00;
+  border: 1px solid #00ff00;
+  padding: 0.4rem 0.8rem;
+  font-family: inherit;
+  font-size: 1rem;
+  margin-top: 0.5rem;
+}
+
+button {
+  margin-right: 0.5rem;
+}
+
+pre {
+  background-color: #000;
+  padding: 1rem;
+  border: 1px dashed #00ff00;
+  white-space: pre-wrap;
+}
+
+.cursor {
+  display: inline-block;
+  width: 1ch;
+  animation: blink 1s steps(2, start) infinite;
+}
+
+@keyframes blink {
+  to { visibility: hidden; }
+}
