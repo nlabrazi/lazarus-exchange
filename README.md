@@ -81,7 +81,7 @@ It’s designed to prevent scams by enforcing mutual visibility and agreement be
 ### 🏗️ Built With
 
 * [![NestJS][NestJs.io]][NestJs-url]
-* ![Javascript][Javascript.js][Javascript.url]
+* [![JavaScript][Javascript.js]][Javascript-url]
 * [![NodeJs][NodeJs.js]][NodeJs-url]
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
