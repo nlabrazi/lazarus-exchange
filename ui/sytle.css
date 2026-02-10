@@ -1,13 +1,34 @@
+* {
+  box-sizing: border-box;
+}
+
+:root {
+  --bg: #000000;
+  --green: #00ff00;
+  --green-soft: #7cff7c;
+  --hover-bg: #001a00;
+  --glow: rgba(0, 255, 0, 0.35);
+}
+
 body {
-  background-color: black;
-  color: #00ff00;
+  background-color: var(--bg);
+  color: var(--green);
   font-family: 'Courier New', Courier, monospace;
-  padding: 2rem;
+  margin: 0;
+  padding: clamp(1rem, 2.2vw, 2.5rem);
+  min-height: 100vh;
+  font-size: 16px;
+}
+
+#terminal {
+  width: 100%;
+  margin: 0;
 }
 
 #ascii-art pre {
-  color: #00ff00;
-  text-shadow: 0 0 5px #0f0;
+  color: var(--green);
+  text-shadow: 0 0 5px var(--green);
+  margin: 0 0 1.5rem;
 }
 
 .section {
@@ -15,24 +36,41 @@ body {
 }
 
 input, select, button {
-  background-color: black;
-  color: #00ff00;
-  border: 1px solid #00ff00;
-  padding: 0.4rem 0.8rem;
+  background-color: var(--bg);
+  color: var(--green);
+  border: 1px solid var(--green);
+  padding: 0.55rem 0.9rem;
   font-family: inherit;
   font-size: 1rem;
   margin-top: 0.5rem;
+  transition: background-color 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
 }
 
 button {
   margin-right: 0.5rem;
 }
 
+button:hover,
+input:hover,
+select:hover {
+  background-color: var(--hover-bg);
+  box-shadow: 0 0 6px var(--glow);
+}
+
+button:focus,
+input:focus,
+select:focus {
+  outline: none;
+  border-color: var(--green-soft);
+  box-shadow: 0 0 8px var(--glow);
+}
+
 pre {
-  background-color: #000;
+  background-color: var(--bg);
   padding: 1rem;
-  border: 1px dashed #00ff00;
+  border: 1px dashed var(--green);
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .cursor {
@@ -43,4 +81,27 @@ pre {
 
 @keyframes blink {
   to { visibility: hidden; }
+}
+
+@media (max-width: 640px) {
+  body {
+    padding: 1rem;
+    font-size: 18px;
+  }
+
+  #terminal {
+    max-width: 100%;
+  }
+
+  input, select, button {
+    width: 100%;
+  }
+
+  button {
+    margin-right: 0;
+  }
+
+  #ascii-art pre {
+    font-size: 1rem;
+  }
 }

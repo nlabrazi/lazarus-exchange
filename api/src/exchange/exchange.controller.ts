@@ -63,7 +63,7 @@ export class ExchangeController {
         .json({ error: 'Both parties must validate first' });
     }
 
-    const file = this.exchangeService.getFile(sessionId, userId);
+    const file = this.exchangeService.getPeerFile(sessionId, userId);
     if (!file) {
       return res.status(404).json({ error: 'File not found' });
     }
@@ -73,5 +73,14 @@ export class ExchangeController {
       'Content-Disposition': `attachment; filename="${file.originalname}"`,
     });
     res.send(file.buffer);
+  }
+
+  @Post('reset/:sessionId/:userId')
+  reset(
+    @Param('sessionId') sessionId: string,
+    @Param('userId') userId: string,
+  ) {
+    const ok = this.exchangeService.resetSession(sessionId, userId);
+    return ok ? { success: true } : { success: false };
   }
 }

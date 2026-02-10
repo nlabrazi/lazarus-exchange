@@ -29,6 +29,13 @@ export class ExchangeService {
     return session;
   }
 
+  private getPeerId(sessionId: string, userId: string): string | null {
+    const session = this.sessions.get(sessionId);
+    if (!session) return null;
+    const peerIds = Object.keys(session.users).filter((id) => id !== userId);
+    return peerIds.length > 0 ? peerIds[0] : null;
+  }
+
   uploadFile(sessionId: string, userId: string, file: UploadedFile) {
     const session = this.getOrCreateSession(sessionId);
     session.users[userId] = session.users[userId] || {};
@@ -40,8 +47,8 @@ export class ExchangeService {
     if (!session || !session.users[userId]) return null;
 
     const me = session.users[userId];
-    const otherId = Object.keys(session.users).find((id) => id !== userId);
-    const peer = otherId ? session.users[otherId] : null;
+    const peerId = this.getPeerId(sessionId, userId);
+    const peer = peerId ? session.users[peerId] : null;
 
     return {
       me: {
@@ -60,8 +67,8 @@ export class ExchangeService {
   getPreview(sessionId: string, userId: string) {
     const session = this.sessions.get(sessionId);
     if (!session) return null;
-    const otherId = Object.keys(session.users).find((id) => id !== userId);
-    const peer = otherId ? session.users[otherId] : null;
+    const peerId = this.getPeerId(sessionId, userId);
+    const peer = peerId ? session.users[peerId] : null;
     if (!peer?.file) return null;
 
     return {
@@ -81,17 +88,29 @@ export class ExchangeService {
   canDownload(sessionId: string, userId: string) {
     const session = this.sessions.get(sessionId);
     if (!session || !session.users[userId]) return false;
-    const otherId = Object.keys(session.users).find((id) => id !== userId);
-    if (!otherId) return false;
+    const peerId = this.getPeerId(sessionId, userId);
+    if (!peerId) return false;
 
     return (
-      session.users[userId]?.validated && session.users[otherId]?.validated
+      session.users[userId]?.validated &&
+      session.users[userId]?.file &&
+      session.users[peerId]?.validated &&
+      session.users[peerId]?.file
     );
   }
 
-  getFile(sessionId: string, userId: string): UploadedFile | null {
+  getPeerFile(sessionId: string, userId: string): UploadedFile | null {
     const session = this.sessions.get(sessionId);
-    if (!session || !session.users[userId]?.file) return null;
-    return session.users[userId].file;
+    if (!session || !session.users[userId]) return null;
+    const peerId = this.getPeerId(sessionId, userId);
+    if (!peerId) return null;
+    return session.users[peerId]?.file || null;
+  }
+
+  resetSession(sessionId: string, userId: string): boolean {
+    const session = this.sessions.get(sessionId);
+    if (!session || !session.users[userId]) return false;
+    this.sessions.delete(sessionId);
+    return true;
   }
 }
