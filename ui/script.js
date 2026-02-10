@@ -13,31 +13,29 @@ function init() {
   const params = new URLSearchParams(window.location.search);
   sessionId = params.get('session') || generateId('s');
 
-  // PART 1: handle userId (from ?user=... or localStorage)
+  // PART 1: handle userId (from ?user=... or generate new)
   const urlUserId = params.get('user');
   if (urlUserId) {
     userId = urlUserId;
-    localStorage.setItem('lazarusUserId', userId);
   } else {
-    userId = localStorage.getItem('lazarusUserId');
-    if (!userId) {
-      userId = generateId('u');
-      localStorage.setItem('lazarusUserId', userId);
-    }
+    userId = generateId('u');
   }
 
-  $('sessionIdDisplay').textContent = sessionId;
-  $('youDisplay').textContent = userId;
-
-  // PART 2: generate link for partner
-  partnerId = generateId('u');
-  const shareLink = `${location.origin}${location.pathname}?session=${sessionId}&user=${partnerId}`;
-  $('shareLink').value = shareLink;
+  updateSessionUI();
 
   log(`🧠 You are: ${userId}\n🔐 Session: ${sessionId} █`);
 
   pollStatus();
   setInterval(pollStatus, 3000);
+}
+
+function updateSessionUI() {
+  $('sessionIdDisplay').textContent = sessionId;
+  $('youDisplay').textContent = userId;
+
+  partnerId = generateId('u');
+  const shareLink = `${location.origin}${location.pathname}?session=${sessionId}&user=${partnerId}`;
+  $('shareLink').value = shareLink;
 }
 
 function log(msg) {
@@ -101,10 +99,14 @@ async function download() {
       return log(`⛔ Cannot download: ${err.error} █`);
     }
 
+    const disposition = res.headers.get('Content-Disposition') || '';
+    const match = /filename=\"([^\"]+)\"/i.exec(disposition);
+    const filename = match?.[1] || 'exchange_file';
+
     const blob = await res.blob();
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = 'exchange_file';
+    a.download = filename;
     a.click();
 
     log('⬇️ Download started █');
@@ -113,10 +115,49 @@ async function download() {
   }
 }
 
+async function resetSession() {
+  try {
+    const res = await fetch(`${API}/reset/${sessionId}/${userId}`, {
+      method: 'POST'
+    });
+    const data = await res.json().catch(() => null);
+
+    sessionId = generateId('s');
+    updateSessionUI();
+    $('fileInput').value = '';
+
+    if (res.ok && data?.success) {
+      log('🔄 Session reset. Share the new link with your peer. █');
+    } else {
+      log('⚠️ No active session on server. New session started. █');
+    }
+  } catch (err) {
+    log('❌ Reset error: ' + err.message + ' █');
+  }
+}
+
 async function pollStatus() {
   try {
     const res = await fetch(`${API}/status/${sessionId}/${userId}`);
-    const status = await res.json();
+    if (!res.ok) {
+      return log(`❌ Polling error: ${res.status} █`);
+    }
+
+    const text = await res.text();
+    if (!text) {
+      return log('⏳ Waiting for activity... █');
+    }
+
+    let status = null;
+    try {
+      status = JSON.parse(text);
+    } catch (err) {
+      return log('⏳ Waiting for activity... █');
+    }
+
+    if (!status || !status.me) {
+      return log('⏳ Waiting for activity... █');
+    }
 
     const my = status.me;
     const peer = status.peer || { uploaded: false, validated: false };
