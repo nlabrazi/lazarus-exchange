@@ -1,6 +1,10 @@
-const API = 'http://localhost:3000/exchange';
+// API par défaut = même origine (OK prod / netlify si proxy, OK local si tu sers UI via backend)
+// Tu peux aussi override via ?api=https://ton-backend.com/exchange
+const params = new URLSearchParams(window.location.search);
+const apiOverride = params.get('api');
+const API = apiOverride || `${location.origin}/exchange`;
 
-const $ = id => document.getElementById(id);
+const $ = (id) => document.getElementById(id);
 let sessionId = '';
 let userId = '';
 let partnerId = '';
@@ -13,13 +17,9 @@ function init() {
   const params = new URLSearchParams(window.location.search);
   sessionId = params.get('session') || generateId('s');
 
-  // PART 1: handle userId (from ?user=... or generate new)
+  // userId vient soit de l'URL (?user=...), soit généré
   const urlUserId = params.get('user');
-  if (urlUserId) {
-    userId = urlUserId;
-  } else {
-    userId = generateId('u');
-  }
+  userId = urlUserId || generateId('u');
 
   updateSessionUI();
 
@@ -34,7 +34,11 @@ function updateSessionUI() {
   $('youDisplay').textContent = userId;
 
   partnerId = generateId('u');
-  const shareLink = `${location.origin}${location.pathname}?session=${sessionId}&user=${partnerId}`;
+
+  const base = `${location.origin}${location.pathname}`;
+  const shareLink = `${base}?session=${sessionId}&user=${partnerId}${
+    apiOverride ? `&api=${encodeURIComponent(apiOverride)}` : ''
+  }`;
   $('shareLink').value = shareLink;
 }
 
@@ -56,11 +60,22 @@ async function upload() {
   formData.append('file', file);
 
   try {
-    await fetch(`${API}/upload/${sessionId}/${userId}`, {
+    const res = await fetch(`${API}/upload/${sessionId}/${userId}`, {
       method: 'POST',
-      body: formData
+      body: formData,
     });
-    log('📤 File uploaded. Waiting for peer... █');
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      return log(`❌ Upload failed (${res.status}): ${text || 'error'} █`);
+    }
+
+    const data = await res.json().catch(() => null);
+    if (data?.maxFileMb) {
+      log(`📤 File uploaded (max ${data.maxFileMb}MB). Waiting for peer... █`);
+    } else {
+      log('📤 File uploaded. Waiting for peer... █');
+    }
   } catch (err) {
     log('❌ Upload error: ' + err.message + ' █');
   }
@@ -83,7 +98,7 @@ async function preview() {
 async function validate() {
   try {
     await fetch(`${API}/validate/${sessionId}/${userId}`, {
-      method: 'POST'
+      method: 'POST',
     });
     log('✅ Validation sent. Waiting for peer... █');
   } catch (err) {
@@ -95,7 +110,7 @@ async function download() {
   try {
     const res = await fetch(`${API}/download/${sessionId}/${userId}`);
     if (res.status !== 200) {
-      const err = await res.json();
+      const err = await res.json().catch(() => ({ error: 'Unknown error' }));
       return log(`⛔ Cannot download: ${err.error} █`);
     }
 
@@ -118,7 +133,7 @@ async function download() {
 async function resetSession() {
   try {
     const res = await fetch(`${API}/reset/${sessionId}/${userId}`, {
-      method: 'POST'
+      method: 'POST',
     });
     const data = await res.json().catch(() => null);
 
@@ -163,8 +178,12 @@ async function pollStatus() {
     const peer = status.peer || { uploaded: false, validated: false };
 
     log(
-`🧑 YOU:    ${my.uploaded ? '✅ Uploaded' : '❌ No file'} | ${my.validated ? '✅ Validated' : '⏳ Waiting'}\n
-👤 PEER:   ${peer.uploaded ? '✅ Uploaded' : '❌ No file'} | ${peer.validated ? '✅ Validated' : '⏳ Waiting'} █`
+      `🧑 YOU:    ${my.uploaded ? '✅ Uploaded' : '❌ No file'} | ${
+        my.validated ? '✅ Validated' : '⏳ Waiting'
+      }\n
+👤 PEER:   ${peer.uploaded ? '✅ Uploaded' : '❌ No file'} | ${
+        peer.validated ? '✅ Validated' : '⏳ Waiting'
+      } █`,
     );
   } catch (err) {
     log('❌ Polling error: ' + err.message + ' █');
