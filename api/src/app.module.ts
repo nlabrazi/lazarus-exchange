@@ -13,4 +13,4 @@ import { join } from 'path';
   controllers: [ExchangeController],
   providers: [ExchangeService],
 })
-export class AppModule { }
+export class AppModule {}
