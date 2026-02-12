@@ -1,125 +1,127 @@
-const params = new URLSearchParams(window.location.search);
-const apiOverride = params.get('api');
+import { API_BASE, LEADER_STORAGE_KEY, POLL_CONFIG, apiOverride } from './scripts/config.js';
+import {
+  clearSelectedFile,
+  getSelectedFile,
+  getShareLinkValue,
+  logStatus,
+  renderExchangeStatus,
+  setSessionIdDisplay,
+  setShareLinkValue,
+  setUserDisplay,
+} from './scripts/dom.js';
+import { createApiClient } from './scripts/api.js';
+import {
+  buildShareLink,
+  getSessionState,
+  initSessionFromUrl,
+  resetSessionId,
+  rotatePartnerId,
+} from './scripts/session.js';
+import { createStatusPoller } from './scripts/poller.js';
 
-const isLocal =
-  location.hostname === 'localhost' ||
-  location.hostname === '127.0.0.1' ||
-  location.hostname === '::1';
+const apiClient = createApiClient(API_BASE);
 
-const defaultApi = isLocal
-  ? 'http://localhost:3000/exchange'
-  : `${location.origin}/exchange`;
+const statusPoller = createStatusPoller({
+  apiClient,
+  getSessionState,
+  onStatus: renderExchangeStatus,
+  onError: logStatus,
+  config: POLL_CONFIG,
+  leaderStorageKey: LEADER_STORAGE_KEY,
+});
 
-const API = apiOverride || defaultApi;
+function refreshSessionUi() {
+  const { sessionId, userId } = getSessionState();
+  setSessionIdDisplay(sessionId);
+  setUserDisplay(userId);
 
-const $ = (id) => document.getElementById(id);
-let sessionId = '';
-let userId = '';
-let partnerId = '';
-
-function generateId(prefix = 'u') {
-  return `${prefix}_${Math.random().toString(36).substring(2, 8)}`;
+  rotatePartnerId();
+  setShareLinkValue(buildShareLink(apiOverride));
 }
 
-function init() {
-  const params = new URLSearchParams(window.location.search);
-  sessionId = params.get('session') || generateId('s');
+async function copySessionLink() {
+  const link = getShareLinkValue();
 
-  // userId vient soit de l'URL (?user=...), soit généré
-  const urlUserId = params.get('user');
-  userId = urlUserId || generateId('u');
-
-  updateSessionUI();
-
-  log(`🧠 You are: ${userId}\n🔐 Session: ${sessionId} █`);
-
-  pollStatus();
-  setInterval(pollStatus, 3000);
-}
-
-function updateSessionUI() {
-  $('sessionIdDisplay').textContent = sessionId;
-  $('youDisplay').textContent = userId;
-
-  partnerId = generateId('u');
-
-  const base = `${location.origin}${location.pathname}`;
-  const shareLink = `${base}?session=${sessionId}&user=${partnerId}${
-    apiOverride ? `&api=${encodeURIComponent(apiOverride)}` : ''
-  }`;
-  $('shareLink').value = shareLink;
-}
-
-function log(msg) {
-  $('statusBox').textContent = msg;
-}
-
-function copySessionLink() {
-  const link = $('shareLink').value;
-  navigator.clipboard.writeText(link);
-  alert('🔗 Link copied to clipboard:\n' + link);
+  try {
+    await navigator.clipboard.writeText(link);
+    alert(`🔗 Link copied to clipboard:\n${link}`);
+  } catch (error) {
+    logStatus(`❌ Clipboard error: ${error?.message || String(error)} █`);
+  }
 }
 
 async function upload() {
-  const file = $('fileInput').files[0];
-  if (!file) return log('⚠️ No file selected █');
+  const file = getSelectedFile();
+  if (!file) {
+    logStatus('⚠️ No file selected █');
+    return;
+  }
 
+  const { sessionId, userId } = getSessionState();
   const formData = new FormData();
   formData.append('file', file);
 
   try {
-    const res = await fetch(`${API}/upload/${sessionId}/${userId}`, {
-      method: 'POST',
-      body: formData,
-    });
+    const res = await apiClient.upload(sessionId, userId, formData);
 
     if (!res.ok) {
       const text = await res.text().catch(() => '');
-      return log(`❌ Upload failed (${res.status}): ${text || 'error'} █`);
+      logStatus(`❌ Upload failed (${res.status}): ${text || 'error'} █`);
+      return;
     }
 
     const data = await res.json().catch(() => null);
     if (data?.maxFileMb) {
-      log(`📤 File uploaded (max ${data.maxFileMb}MB). Waiting for peer... █`);
+      logStatus(`📤 File uploaded (max ${data.maxFileMb}MB). Waiting for peer... █`);
     } else {
-      log('📤 File uploaded. Waiting for peer... █');
+      logStatus('📤 File uploaded. Waiting for peer... █');
     }
-  } catch (err) {
-    log('❌ Upload error: ' + (err?.message || String(err)) + ' █');
+
+    statusPoller.scheduleSoon(1000);
+  } catch (error) {
+    logStatus(`❌ Upload error: ${error?.message || String(error)} █`);
   }
 }
 
 async function preview() {
+  const { sessionId, userId } = getSessionState();
+
   try {
-    const res = await fetch(`${API}/preview/${sessionId}/${userId}`);
+    const res = await apiClient.preview(sessionId, userId);
     const data = await res.json();
+
     if (data && data.originalname) {
-      log(`👀 Preview of peer file:\n${data.originalname} (${data.size} bytes) █`);
+      logStatus(`👀 Preview of peer file:\n${data.originalname} (${data.size} bytes) █`);
     } else {
-      log('⏳ No file from peer yet... █');
+      logStatus('⏳ No file from peer yet... █');
     }
-  } catch (err) {
-    log('❌ Preview error: ' + (err?.message || String(err)) + ' █');
+  } catch (error) {
+    logStatus(`❌ Preview error: ${error?.message || String(error)} █`);
   }
 }
 
 async function validate() {
+  const { sessionId, userId } = getSessionState();
+
   try {
-    await fetch(`${API}/validate/${sessionId}/${userId}`, {
-      method: 'POST',
-    });
-    log('✅ Validation sent. Waiting for peer... █');
-  } catch (err) {
-    log('❌ Validation error: ' + (err?.message || String(err)) + ' █');
+    await apiClient.validate(sessionId, userId);
+    logStatus('✅ Validation sent. Waiting for peer... █');
+    statusPoller.scheduleSoon(1000);
+  } catch (error) {
+    logStatus(`❌ Validation error: ${error?.message || String(error)} █`);
   }
 }
 
 async function download() {
+  const { sessionId, userId } = getSessionState();
+
   try {
-    const res = await fetch(`${API}/download/${sessionId}/${userId}`);
+    const res = await apiClient.download(sessionId, userId);
+
     if (res.status !== 200) {
       const err = await res.json().catch(() => ({ error: 'Unknown error' }));
-      return log(`⛔ Cannot download: ${err.error} █`);
+      logStatus(`⛔ Cannot download: ${err.error} █`);
+      return;
     }
 
     const disposition = res.headers.get('Content-Disposition') || '';
@@ -127,75 +129,58 @@ async function download() {
     const filename = match?.[1] || 'exchange_file';
 
     const blob = await res.blob();
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = filename;
-    a.click();
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = filename;
+    link.click();
 
-    log('⬇️ Download started █');
-  } catch (err) {
-    log('❌ Download error: ' + (err?.message || String(err)) + ' █');
+    logStatus('⬇️ Download started █');
+  } catch (error) {
+    logStatus(`❌ Download error: ${error?.message || String(error)} █`);
   }
 }
 
 async function resetSession() {
+  const { sessionId, userId } = getSessionState();
+
   try {
-    const res = await fetch(`${API}/reset/${sessionId}/${userId}`, {
-      method: 'POST',
-    });
+    const res = await apiClient.reset(sessionId, userId);
     const data = await res.json().catch(() => null);
 
-    sessionId = generateId('s');
-    updateSessionUI();
-    $('fileInput').value = '';
+    resetSessionId();
+    refreshSessionUi();
+    clearSelectedFile();
+    statusPoller.resetState();
+    statusPoller.scheduleSoon(500);
 
     if (res.ok && data?.success) {
-      log('🔄 Session reset. Share the new link with your peer. █');
+      logStatus('🔄 Session reset. Share the new link with your peer. █');
     } else {
-      log('⚠️ No active session on server. New session started. █');
+      logStatus('⚠️ No active session on server. New session started. █');
     }
-  } catch (err) {
-    log('❌ Reset error: ' + (err?.message || String(err)) + ' █');
+  } catch (error) {
+    logStatus(`❌ Reset error: ${error?.message || String(error)} █`);
   }
 }
 
-async function pollStatus() {
-  try {
-    const res = await fetch(`${API}/status/${sessionId}/${userId}`);
-    if (!res.ok) {
-      return log(`❌ Polling error: ${res.status} █`);
-    }
+function init() {
+  const { sessionId, userId } = initSessionFromUrl();
 
-    const text = await res.text();
-    if (!text) {
-      return log('⏳ Waiting for activity... █');
-    }
+  refreshSessionUi();
+  logStatus(`🧠 You are: ${userId}\n🔐 Session: ${sessionId} █`);
 
-    let status = null;
-    try {
-      status = JSON.parse(text);
-    } catch (err) {
-      return log('⏳ Waiting for activity... █');
-    }
+  document.addEventListener('visibilitychange', () => {
+    statusPoller.scheduleSoon();
+  });
 
-    if (!status || !status.me) {
-      return log('⏳ Waiting for activity... █');
-    }
-
-    const my = status.me;
-    const peer = status.peer || { uploaded: false, validated: false };
-
-    log(
-      `🧑 YOU:    ${my.uploaded ? '✅ Uploaded' : '❌ No file'} | ${
-        my.validated ? '✅ Validated' : '⏳ Waiting'
-      }\n
-👤 PEER:   ${peer.uploaded ? '✅ Uploaded' : '❌ No file'} | ${
-        peer.validated ? '✅ Validated' : '⏳ Waiting'
-      } █`,
-    );
-  } catch (err) {
-    log('❌ Polling error: ' + (err?.message || String(err)) + ' █');
-  }
+  statusPoller.start();
 }
 
-window.onload = init;
+window.copySessionLink = copySessionLink;
+window.upload = upload;
+window.preview = preview;
+window.validate = validate;
+window.download = download;
+window.resetSession = resetSession;
+window.addEventListener('beforeunload', () => statusPoller.stop());
+window.addEventListener('load', init);
