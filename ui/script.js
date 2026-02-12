@@ -18,6 +18,7 @@ import {
   rotatePartnerId,
 } from './scripts/session.js';
 import { createStatusPoller } from './scripts/poller.js';
+import { friendlyErrorFromApi } from './scripts/errors.js';
 
 const apiClient = createApiClient(API_BASE);
 
@@ -29,6 +30,26 @@ const statusPoller = createStatusPoller({
   config: POLL_CONFIG,
   leaderStorageKey: LEADER_STORAGE_KEY,
 });
+
+const DEBUG =
+  location.hostname === 'localhost' ||
+  new URLSearchParams(location.search).get('debug') === '1';
+
+function devLog(...args) {
+  if (DEBUG) console.log('[lazarus]', ...args);
+}
+
+async function handleBadResponse(context, res) {
+  const text = await res.text().catch(() => '');
+  let json = null;
+  try {
+    json = JSON.parse(text);
+  } catch {}
+
+  const { user, dev } = friendlyErrorFromApi({ status: res.status, text, json });
+  devLog(`${context} failed`, dev);
+  logStatus(`❌ ${user} █`);
+}
 
 function refreshSessionUi() {
   const { sessionId, userId } = getSessionState();
@@ -65,8 +86,7 @@ async function upload() {
     const res = await apiClient.upload(sessionId, userId, formData);
 
     if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      logStatus(`❌ Upload failed (${res.status}): ${text || 'error'} █`);
+      await handleBadResponse('Upload', res);
       return;
     }
 
@@ -79,7 +99,8 @@ async function upload() {
 
     statusPoller.scheduleSoon(1000);
   } catch (error) {
-    logStatus(`❌ Upload error: ${error?.message || String(error)} █`);
+    devLog('Upload network error', error);
+    logStatus('❌ Network error. Please check your connection and try again. █');
   }
 }
 
@@ -88,7 +109,13 @@ async function preview() {
 
   try {
     const res = await apiClient.preview(sessionId, userId);
-    const data = await res.json();
+
+    if (!res.ok) {
+      await handleBadResponse('Preview', res);
+      return;
+    }
+
+    const data = await res.json().catch(() => null);
 
     if (data && data.originalname) {
       logStatus(`👀 Preview of peer file:\n${data.originalname} (${data.size} bytes) █`);
@@ -96,7 +123,8 @@ async function preview() {
       logStatus('⏳ No file from peer yet... █');
     }
   } catch (error) {
-    logStatus(`❌ Preview error: ${error?.message || String(error)} █`);
+    devLog('Preview network error', error);
+    logStatus('❌ Network error. Please check your connection and try again. █');
   }
 }
 
@@ -104,11 +132,18 @@ async function validate() {
   const { sessionId, userId } = getSessionState();
 
   try {
-    await apiClient.validate(sessionId, userId);
+    const res = await apiClient.validate(sessionId, userId);
+
+    if (!res.ok) {
+      await handleBadResponse('Validation', res);
+      return;
+    }
+
     logStatus('✅ Validation sent. Waiting for peer... █');
     statusPoller.scheduleSoon(1000);
   } catch (error) {
-    logStatus(`❌ Validation error: ${error?.message || String(error)} █`);
+    devLog('Validation network error', error);
+    logStatus('❌ Network error. Please check your connection and try again. █');
   }
 }
 
@@ -118,9 +153,8 @@ async function download() {
   try {
     const res = await apiClient.download(sessionId, userId);
 
-    if (res.status !== 200) {
-      const err = await res.json().catch(() => ({ error: 'Unknown error' }));
-      logStatus(`⛔ Cannot download: ${err.error} █`);
+    if (!res.ok) {
+      await handleBadResponse('Download', res);
       return;
     }
 
@@ -136,7 +170,8 @@ async function download() {
 
     logStatus('⬇️ Download started █');
   } catch (error) {
-    logStatus(`❌ Download error: ${error?.message || String(error)} █`);
+    devLog('Download network error', error);
+    logStatus('❌ Network error. Please check your connection and try again. █');
   }
 }
 
