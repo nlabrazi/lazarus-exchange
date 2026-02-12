@@ -1,0 +1,2 @@
+/exchange/*  https://lazarus-exchange-production-578c.up.railway.app/exchange/:splat  200!
+/*          /index.html  200
