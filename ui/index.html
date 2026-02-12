@@ -4,44 +4,86 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Lazarus Exchange - Terminal</title>
+  <title>Lazarus Exchange - Retro Terminal</title>
   <link rel="stylesheet" href="./style.css" />
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+  <link rel="icon" href="./favicon.ico" sizes="any" />
 </head>
 
 <body>
-  <div id="terminal">
-    <div id="ascii-art">
-      <pre>
-              LAZARUS EXCHANGE
-</pre>
-    </div>
+  <main id="terminal" class="shell">
+    <header class="mast">
+      <div class="brand">
+        <h1 class="title">Lazarus-Exchange</h1>
+        <div class="tagline">Anonymous exchange of small files or URLs.</div>
+        <div class="ticker">Both sides must validate to unlock the links.</div>
+      </div>
 
-    <div id="app">
-      <p><strong>Session ID:</strong> <span id="sessionIdDisplay"></span></p>
-      <p><strong>You are:</strong> <span id="youDisplay"></span></p>
-      <p><strong>Link for your partner:</strong></p>
-      <input id="shareLink" readonly style="width: 100%" />
-      <button onclick="copySessionLink()">📎 Copy link for second user</button>
+      <div class="meta">
+        <div class="meta-item">
+          <span class="meta-label">SESSION</span>
+          <span id="sessionIdDisplay" class="meta-value"></span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-label">YOU</span>
+          <span id="youDisplay" class="meta-value"></span>
+        </div>
+      </div>
+    </header>
 
-      <div class="section">
-        <label>Select file:</label>
+    <div class="grid">
+      <section class="panel">
+        <div class="panel-title">
+          <h2>Secure channel</h2>
+          <span class="chip">PAIR LINK</span>
+        </div>
+        <p class="hint">Share this link with your partner to join the same session.</p>
+        <div class="input-row">
+          <input id="shareLink" readonly />
+          <button class="btn btn-primary" onclick="copySessionLink()">COPY</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-title">
+          <h2>Payload</h2>
+          <span class="chip">UPLOAD</span>
+        </div>
+        <label class="field">File to send</label>
         <input id="fileInput" type="file" />
-        <button onclick="upload()">⬆️ UPLOAD</button>
-      </div>
+        <div class="actions">
+          <button class="btn" onclick="upload()">UPLOAD</button>
+          <button class="btn" onclick="preview()">PREVIEW</button>
+        </div>
+      </section>
 
-      <div class="section">
-        <button onclick="preview()">👀 SHOW PREVIEW</button>
-        <button onclick="validate()">✅ VALIDATE</button>
-        <button onclick="download()">⬇️ DOWNLOAD</button>
-        <button onclick="resetSession()">🔄 RESET</button>
-      </div>
+      <section class="panel">
+        <div class="panel-title">
+          <h2>Validation</h2>
+          <span class="chip">DOUBLE OK</span>
+        </div>
+        <div class="actions">
+          <button class="btn" onclick="validate()">VALIDATE</button>
+          <button class="btn" onclick="download()">DOWNLOAD</button>
+          <button class="btn btn-ghost" onclick="resetSession()">RESET</button>
+        </div>
+        <p class="hint">Each user validates before download.</p>
+      </section>
 
-      <div class="section">
-        <label>Status:</label>
+      <section class="panel panel-status">
+        <div class="panel-title">
+          <h2>Console</h2>
+          <span class="live">LIVE</span>
+        </div>
         <pre id="statusBox">Connecting<span class="cursor">█</span></pre>
-      </div>
+      </section>
     </div>
-  </div>
+
+    <footer class="footer">
+      <span>Ultra-light mode. No accounts. Ephemeral session.</span>
+      <span class="pulse">READY</span>
+    </footer>
+  </main>
 
   <script src="./script.js"></script>
 </body>
