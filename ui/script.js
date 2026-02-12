@@ -1,8 +1,16 @@
-// API par défaut = même origine (OK prod / netlify si proxy, OK local si tu sers UI via backend)
-// Tu peux aussi override via ?api=https://ton-backend.com/exchange
 const params = new URLSearchParams(window.location.search);
 const apiOverride = params.get('api');
-const API = apiOverride || `${location.origin}/exchange`;
+
+const isLocal =
+  location.hostname === 'localhost' ||
+  location.hostname === '127.0.0.1' ||
+  location.hostname === '::1';
+
+const defaultApi = isLocal
+  ? 'http://localhost:3000/exchange'
+  : `${location.origin}/exchange`;
+
+const API = apiOverride || defaultApi;
 
 const $ = (id) => document.getElementById(id);
 let sessionId = '';
@@ -77,7 +85,7 @@ async function upload() {
       log('📤 File uploaded. Waiting for peer... █');
     }
   } catch (err) {
-    log('❌ Upload error: ' + err.message + ' █');
+    log('❌ Upload error: ' + (err?.message || String(err)) + ' █');
   }
 }
 
@@ -91,7 +99,7 @@ async function preview() {
       log('⏳ No file from peer yet... █');
     }
   } catch (err) {
-    log('❌ Preview error: ' + err.message + ' █');
+    log('❌ Preview error: ' + (err?.message || String(err)) + ' █');
   }
 }
 
@@ -102,7 +110,7 @@ async function validate() {
     });
     log('✅ Validation sent. Waiting for peer... █');
   } catch (err) {
-    log('❌ Validation error: ' + err.message + ' █');
+    log('❌ Validation error: ' + (err?.message || String(err)) + ' █');
   }
 }
 
@@ -126,7 +134,7 @@ async function download() {
 
     log('⬇️ Download started █');
   } catch (err) {
-    log('❌ Download error: ' + err.message + ' █');
+    log('❌ Download error: ' + (err?.message || String(err)) + ' █');
   }
 }
 
@@ -147,7 +155,7 @@ async function resetSession() {
       log('⚠️ No active session on server. New session started. █');
     }
   } catch (err) {
-    log('❌ Reset error: ' + err.message + ' █');
+    log('❌ Reset error: ' + (err?.message || String(err)) + ' █');
   }
 }
 
@@ -186,7 +194,7 @@ async function pollStatus() {
       } █`,
     );
   } catch (err) {
-    log('❌ Polling error: ' + err.message + ' █');
+    log('❌ Polling error: ' + (err?.message || String(err)) + ' █');
   }
 }
 

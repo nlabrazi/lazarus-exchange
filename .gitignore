@@ -1,0 +1,12 @@
+# root node modules
+/node_modules
+
+# build outputs
+dist
+build
+
+# env
+.env
+
+# macOS
+.DS_Store
