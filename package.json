@@ -4,7 +4,7 @@
   "scripts": {
     "dev": "concurrently \"npm run dev:api\" \"npm run dev:ui\"",
     "dev:api": "cd api && npm run start:dev",
-    "dev:ui": "serve ui -l 5173"
+    "dev:ui": "serve -s ui -l 5173"
   },
   "devDependencies": {
     "concurrently": "^8.2.2",

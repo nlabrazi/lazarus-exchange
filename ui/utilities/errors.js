@@ -29,6 +29,20 @@ export function friendlyErrorFromApi({ status, text, json }) {
     };
   }
 
+  if (status === 409) {
+    return {
+      user: "This invite cannot be used because the session already has a peer.",
+      dev: { status, raw },
+    };
+  }
+
+  if (status === 410) {
+    return {
+      user: "This invite link is no longer valid (expired or already used).",
+      dev: { status, raw },
+    };
+  }
+
   if (status === 413) {
     return {
       user: "File too large. Please upload a smaller file.",

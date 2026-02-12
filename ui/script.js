@@ -1,4 +1,9 @@
-import { API_BASE, LEADER_STORAGE_KEY, POLL_CONFIG, apiOverride } from './scripts/config.js';
+import {
+  API_BASE,
+  LEADER_STORAGE_KEY,
+  POLL_CONFIG,
+  apiOverride,
+} from './utilities/config.js';
 import {
   clearSelectedFile,
   getSelectedFile,
@@ -8,28 +13,16 @@ import {
   setSessionIdDisplay,
   setShareLinkValue,
   setUserDisplay,
-} from './scripts/dom.js';
-import { createApiClient } from './scripts/api.js';
+} from './utilities/dom.js';
+import { createApiClient } from './utilities/api.js';
 import {
   buildShareLink,
   getSessionState,
   initSessionFromUrl,
-  resetSessionId,
-  rotatePartnerId,
-} from './scripts/session.js';
-import { createStatusPoller } from './scripts/poller.js';
-import { friendlyErrorFromApi } from './scripts/errors.js';
-
-const apiClient = createApiClient(API_BASE);
-
-const statusPoller = createStatusPoller({
-  apiClient,
-  getSessionState,
-  onStatus: renderExchangeStatus,
-  onError: logStatus,
-  config: POLL_CONFIG,
-  leaderStorageKey: LEADER_STORAGE_KEY,
-});
+} from './utilities/session.js';
+import { createStatusPoller } from './utilities/poller.js';
+import { friendlyErrorFromApi } from './utilities/errors.js';
+import { createAuthManager } from './utilities/auth.js';
 
 const DEBUG =
   location.hostname === 'localhost' ||
@@ -48,20 +41,51 @@ async function handleBadResponse(context, res) {
 
   const { user, dev } = friendlyErrorFromApi({ status: res.status, text, json });
   devLog(`${context} failed`, dev);
+
   logStatus(`❌ ${user} █`);
 }
 
-function refreshSessionUi() {
-  const { sessionId, userId } = getSessionState();
-  setSessionIdDisplay(sessionId);
-  setUserDisplay(userId);
+const apiClient = createApiClient(API_BASE);
 
-  rotatePartnerId();
-  setShareLinkValue(buildShareLink(apiOverride));
+const authManager = createAuthManager({
+  apiClient,
+  handleBadResponse,
+  logStatus,
+  devLog,
+});
+
+const statusPoller = createStatusPoller({
+  apiClient,
+  getAuthToken: authManager.getAuthToken,
+  onStatus: renderExchangeStatus,
+  onError: logStatus,
+  config: POLL_CONFIG,
+  leaderStorageKey: LEADER_STORAGE_KEY,
+});
+
+async function refreshSessionUi() {
+  const { sessionId, userId } = getSessionState();
+  setSessionIdDisplay(sessionId || '-');
+  setUserDisplay(userId || '-');
+
+  const res = await authManager.runAuthedRequest('Share link', (token) =>
+    apiClient.createInvite(token),
+  );
+  if (!res) {
+    setShareLinkValue('');
+    return;
+  }
+
+  const data = await res.json().catch(() => null);
+  setShareLinkValue(buildShareLink(data?.inviteCode || '', apiOverride));
 }
 
 async function copySessionLink() {
   const link = getShareLinkValue();
+  if (!link) {
+    logStatus('⚠️ Share link unavailable right now. █');
+    return;
+  }
 
   try {
     await navigator.clipboard.writeText(link);
@@ -78,131 +102,99 @@ async function upload() {
     return;
   }
 
-  const { sessionId, userId } = getSessionState();
   const formData = new FormData();
   formData.append('file', file);
 
-  try {
-    const res = await apiClient.upload(sessionId, userId, formData);
+  const res = await authManager.runAuthedRequest('Upload', (token) =>
+    apiClient.upload(token, formData),
+  );
+  if (!res) return;
 
-    if (!res.ok) {
-      await handleBadResponse('Upload', res);
-      return;
-    }
-
-    const data = await res.json().catch(() => null);
-    if (data?.maxFileMb) {
-      logStatus(`📤 File uploaded (max ${data.maxFileMb}MB). Waiting for peer... █`);
-    } else {
-      logStatus('📤 File uploaded. Waiting for peer... █');
-    }
-
-    statusPoller.scheduleSoon(1000);
-  } catch (error) {
-    devLog('Upload network error', error);
-    logStatus('❌ Network error. Please check your connection and try again. █');
+  const data = await res.json().catch(() => null);
+  if (data?.maxFileMb) {
+    logStatus(`📤 File uploaded (max ${data.maxFileMb}MB). Waiting for peer... █`);
+  } else {
+    logStatus('📤 File uploaded. Waiting for peer... █');
   }
+
+  statusPoller.scheduleSoon(1000);
 }
 
 async function preview() {
-  const { sessionId, userId } = getSessionState();
+  const res = await authManager.runAuthedRequest('Preview', (token) =>
+    apiClient.preview(token),
+  );
+  if (!res) return;
 
-  try {
-    const res = await apiClient.preview(sessionId, userId);
+  const data = await res.json().catch(() => null);
 
-    if (!res.ok) {
-      await handleBadResponse('Preview', res);
-      return;
-    }
-
-    const data = await res.json().catch(() => null);
-
-    if (data && data.originalname) {
-      logStatus(`👀 Preview of peer file:\n${data.originalname} (${data.size} bytes) █`);
-    } else {
-      logStatus('⏳ No file from peer yet... █');
-    }
-  } catch (error) {
-    devLog('Preview network error', error);
-    logStatus('❌ Network error. Please check your connection and try again. █');
+  if (data && data.originalname) {
+    logStatus(`👀 Preview of peer file:\n${data.originalname} (${data.size} bytes) █`);
+  } else {
+    logStatus('⏳ No file from peer yet... █');
   }
 }
 
 async function validate() {
-  const { sessionId, userId } = getSessionState();
+  const res = await authManager.runAuthedRequest('Validation', (token) =>
+    apiClient.validate(token),
+  );
+  if (!res) return;
 
-  try {
-    const res = await apiClient.validate(sessionId, userId);
-
-    if (!res.ok) {
-      await handleBadResponse('Validation', res);
-      return;
-    }
-
-    logStatus('✅ Validation sent. Waiting for peer... █');
-    statusPoller.scheduleSoon(1000);
-  } catch (error) {
-    devLog('Validation network error', error);
-    logStatus('❌ Network error. Please check your connection and try again. █');
-  }
+  logStatus('✅ Validation sent. Waiting for peer... █');
+  statusPoller.scheduleSoon(1000);
 }
 
 async function download() {
-  const { sessionId, userId } = getSessionState();
+  const res = await authManager.runAuthedRequest('Download', (token) =>
+    apiClient.download(token),
+  );
+  if (!res) return;
 
-  try {
-    const res = await apiClient.download(sessionId, userId);
+  const disposition = res.headers.get('Content-Disposition') || '';
+  const match = /filename=\"([^\"]+)\"/i.exec(disposition);
+  const filename = match?.[1] || 'exchange_file';
 
-    if (!res.ok) {
-      await handleBadResponse('Download', res);
-      return;
-    }
+  const blob = await res.blob();
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = filename;
+  link.click();
 
-    const disposition = res.headers.get('Content-Disposition') || '';
-    const match = /filename=\"([^\"]+)\"/i.exec(disposition);
-    const filename = match?.[1] || 'exchange_file';
-
-    const blob = await res.blob();
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = filename;
-    link.click();
-
-    logStatus('⬇️ Download started █');
-  } catch (error) {
-    devLog('Download network error', error);
-    logStatus('❌ Network error. Please check your connection and try again. █');
-  }
+  logStatus('⬇️ Download started █');
 }
 
 async function resetSession() {
-  const { sessionId, userId } = getSessionState();
+  const res = await authManager.runAuthedRequest('Reset', (token) =>
+    apiClient.reset(token),
+  );
+  if (!res) return;
+  const data = await res.json().catch(() => null);
 
-  try {
-    const res = await apiClient.reset(sessionId, userId);
-    const data = await res.json().catch(() => null);
+  const created = await authManager.issueFreshToken();
+  if (!created) return;
 
-    resetSessionId();
-    refreshSessionUi();
-    clearSelectedFile();
-    statusPoller.resetState();
-    statusPoller.scheduleSoon(500);
+  await refreshSessionUi();
+  clearSelectedFile();
+  statusPoller.resetState();
+  statusPoller.scheduleSoon(500);
 
-    if (res.ok && data?.success) {
-      logStatus('🔄 Session reset. Share the new link with your peer. █');
-    } else {
-      logStatus('⚠️ No active session on server. New session started. █');
-    }
-  } catch (error) {
-    logStatus(`❌ Reset error: ${error?.message || String(error)} █`);
+  if (data?.success) {
+    logStatus('🔄 Session reset. Share the new link with your peer. █');
+  } else {
+    logStatus('⚠️ No active session on server. New session started. █');
   }
 }
 
-function init() {
-  const { sessionId, userId } = initSessionFromUrl();
+async function init() {
+  initSessionFromUrl();
 
-  refreshSessionUi();
-  logStatus(`🧠 You are: ${userId}\n🔐 Session: ${sessionId} █`);
+  const ready = await authManager.ensureSessionIdentity();
+  if (!ready) return;
+
+  await refreshSessionUi();
+  const { sessionId, userId } = getSessionState();
+  logStatus(`🧠 You are: ${userId || 'unknown'}\n🔐 Session: ${sessionId || 'unknown'} █`);
 
   document.addEventListener('visibilitychange', () => {
     statusPoller.scheduleSoon();
