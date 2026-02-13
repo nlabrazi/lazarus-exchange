@@ -2,8 +2,34 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import 'dotenv/config';
 
+type TrustProxyConfigurable = {
+  set: (key: string, value: unknown) => unknown;
+};
+
+function canConfigureTrustProxy(
+  candidate: unknown,
+): candidate is TrustProxyConfigurable {
+  return (
+    typeof candidate === 'object' &&
+    candidate !== null &&
+    'set' in candidate &&
+    typeof (candidate as { set?: unknown }).set === 'function'
+  );
+}
+
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  const trustProxyValue = (process.env.TRUST_PROXY ?? '').trim().toLowerCase();
+  if (
+    trustProxyValue === '1' ||
+    trustProxyValue === 'true' ||
+    trustProxyValue === 'yes'
+  ) {
+    const adapterInstance: unknown = app.getHttpAdapter().getInstance();
+    if (canConfigureTrustProxy(adapterInstance)) {
+      adapterInstance.set('trust proxy', 1);
+    }
+  }
 
   // Autorise la UI locale (serve -s ui -l 5173)
   app.enableCors({
