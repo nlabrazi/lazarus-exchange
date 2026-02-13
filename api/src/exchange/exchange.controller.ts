@@ -4,22 +4,33 @@ import {
   Get,
   Param,
   Headers,
+  Req,
   UploadedFile,
   UseInterceptors,
+  UseGuards,
   Res,
   HttpException,
   HttpStatus,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ExchangeService } from './exchange.service';
-import { Response } from 'express';
+import { Request, Response } from 'express';
+import { ApiRateLimitService } from '../security/api-rate-limit.service';
+import { RateLimitRoute } from '../security/rate-limit-route.decorator';
+import { RouteRateLimitGuard } from '../security/route-rate-limit.guard';
 
 const MAX_FILE_MB = Number(process.env.MAX_FILE_MB ?? 25);
 const MAX_FILE_BYTES = MAX_FILE_MB * 1024 * 1024;
 
+type RateLimitedRequest = Request & { rateLimitIp?: string };
+
+@UseGuards(RouteRateLimitGuard)
 @Controller('exchange')
 export class ExchangeController {
-  constructor(private readonly exchangeService: ExchangeService) {}
+  constructor(
+    private readonly exchangeService: ExchangeService,
+    private readonly apiRateLimitService: ApiRateLimitService,
+  ) {}
 
   private tokenFromAuthHeader(authHeader?: string): string {
     if (!authHeader || !authHeader.toLowerCase().startsWith('bearer ')) {
@@ -40,6 +51,7 @@ export class ExchangeController {
   }
 
   @Post('auth/new')
+  @RateLimitRoute('auth_new')
   createToken() {
     return this.exchangeService.createSessionTokenForNewUser();
   }
@@ -51,17 +63,20 @@ export class ExchangeController {
   }
 
   @Post('invite/accept/:inviteCode')
+  @RateLimitRoute('invite_accept')
   acceptInvite(@Param('inviteCode') inviteCode: string) {
     return this.exchangeService.acceptInvite(inviteCode);
   }
 
   @Post('upload')
+  @RateLimitRoute('upload')
   @UseInterceptors(
     FileInterceptor('file', {
       limits: { fileSize: MAX_FILE_BYTES },
     }),
   )
   async uploadByToken(
+    @Req() req: Request,
     @Headers('authorization') authHeader: string | undefined,
     @UploadedFile() file: Express.Multer.File,
   ) {
@@ -76,6 +91,12 @@ export class ExchangeController {
     if (file.mimetype && blockedMimes.has(file.mimetype)) {
       throw new HttpException('File type not allowed', HttpStatus.BAD_REQUEST);
     }
+
+    const rateLimitedReq = req as RateLimitedRequest;
+    const ip =
+      rateLimitedReq.rateLimitIp ??
+      this.apiRateLimitService.enforceRoute('upload', req);
+    this.apiRateLimitService.enforceUploadBytes(ip, file.size);
 
     const { sessionId, userId } = this.identityFromAuthHeader(authHeader);
     await this.exchangeService.uploadFile(sessionId, userId, file);

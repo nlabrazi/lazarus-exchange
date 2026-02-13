@@ -70,15 +70,29 @@ export class ExchangeService {
   constructor() {
     const url = process.env.SUPABASE_URL;
     const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const jwtSecret = (process.env.JWT_SECRET ?? '').trim();
 
     if (!url || !key) {
       throw new Error(
         'Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in environment',
       );
     }
+    if (!jwtSecret) {
+      throw new Error(
+        'Missing JWT_SECRET in environment (use a dedicated JWT secret, not the Supabase service role key)',
+      );
+    }
+    if (jwtSecret === key) {
+      throw new Error(
+        'JWT_SECRET must be different from SUPABASE_SERVICE_ROLE_KEY',
+      );
+    }
+    if (jwtSecret.length < 32) {
+      throw new Error('JWT_SECRET must be at least 32 characters long');
+    }
 
     this.supabase = createClient(url, key, { auth: { persistSession: false } });
-    this.tokenSecret = (process.env.JWT_SECRET ?? '').trim() || key;
+    this.tokenSecret = jwtSecret;
 
     const configuredTtl = Number(
       process.env.JWT_TTL_SECONDS ?? DEFAULT_JWT_TTL_SECONDS,
