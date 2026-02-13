@@ -11,11 +11,25 @@
 
 <body>
   <main id="terminal" class="shell">
+    <div class="window-bar">
+      <div class="window-controls" aria-hidden="true">
+        <span class="dot dot-red"></span>
+        <span class="dot dot-amber"></span>
+        <span class="dot dot-green"></span>
+      </div>
+      <span class="window-title">root@lazarus: ./exchange --secure --live</span>
+    </div>
+
     <header class="mast">
       <div class="brand">
-        <h1 class="title">Lazarus-Exchange</h1>
-        <div class="tagline">Anonymous exchange of small files or URLs.</div>
-        <div class="ticker">Both sides must validate to unlock the links.</div>
+        <p class="bootline">
+          <span class="boot-prompt">root@lazarus:~$</span>
+          <span class="boot-command">init handshake --mode fair-exchange</span>
+        </p>
+        <h1 class="title">Lazarus Exchange</h1>
+        <p class="tagline">
+          Two-party exchange. Upload on both sides, validate on both sides, then unlock download.
+        </p>
       </div>
 
       <div class="meta">
@@ -33,38 +47,35 @@
     <div class="grid">
       <section class="panel">
         <div class="panel-title">
-          <h2>Secure channel</h2>
-          <span class="chip">PAIR LINK</span>
+          <h2>01. Pair Link</h2>
         </div>
-        <p class="hint">Share this link with your partner to join the same session.</p>
+        <p class="hint">Share this link with your partner to join your secure channel.</p>
         <div class="input-row">
           <input id="shareLink" readonly />
-          <button class="btn btn-primary" onclick="copySessionLink()">COPY</button>
+          <button class="btn btn-primary btn-copy" onclick="copySessionLink()">COPY</button>
         </div>
       </section>
 
       <section class="panel">
         <div class="panel-title">
-          <h2>Payload</h2>
-          <span class="chip">UPLOAD</span>
+          <h2>02. Payload</h2>
         </div>
         <label class="field">File to send</label>
         <input id="fileInput" type="file" />
         <div class="actions">
-          <button class="btn" onclick="upload()">UPLOAD</button>
-          <button class="btn" onclick="preview()">PREVIEW</button>
+          <button class="btn btn-upload" onclick="upload()">UPLOAD</button>
+          <button class="btn btn-preview" onclick="preview()">PREVIEW</button>
         </div>
       </section>
 
       <section class="panel">
         <div class="panel-title">
-          <h2>Validation</h2>
-          <span class="chip">DOUBLE OK</span>
+          <h2>03. Validation</h2>
         </div>
         <div class="actions">
-          <button class="btn" onclick="validate()">VALIDATE</button>
-          <button class="btn" onclick="download()">DOWNLOAD</button>
-          <button class="btn btn-ghost" onclick="resetSession()">RESET</button>
+          <button class="btn btn-validate" onclick="validate()">VALIDATE</button>
+          <button class="btn btn-download" onclick="download()">DOWNLOAD</button>
+          <button class="btn btn-reset" onclick="resetSession()">RESET</button>
         </div>
         <p class="hint">Each user validates before download.</p>
       </section>
@@ -79,9 +90,11 @@
     </div>
 
     <footer class="footer">
-      <span>Ultra-light mode. No accounts. Ephemeral session.</span>
+      <span>No account. Ephemeral session. JWT in Authorization header only.</span>
       <span class="pulse">READY</span>
     </footer>
+
+    <output id="toast" class="toast" role="status" aria-live="polite"></output>
   </main>
 
   <script type="module" src="/script.js"></script>

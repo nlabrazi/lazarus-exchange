@@ -13,6 +13,7 @@ import {
   setSessionIdDisplay,
   setShareLinkValue,
   setUserDisplay,
+  showToast,
 } from './utilities/dom.js';
 import { createApiClient } from './utilities/api.js';
 import {
@@ -89,8 +90,9 @@ async function copySessionLink() {
 
   try {
     await navigator.clipboard.writeText(link);
-    alert(`🔗 Link copied to clipboard:\n${link}`);
+    showToast('Share link copied to clipboard.', 'success');
   } catch (error) {
+    showToast('Unable to copy link. Clipboard access failed.', 'error');
     logStatus(`❌ Clipboard error: ${error?.message || String(error)} █`);
   }
 }
