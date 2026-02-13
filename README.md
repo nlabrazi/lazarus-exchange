@@ -109,13 +109,11 @@ npm install
 npm run start:dev
 
 # In another terminal
-cd ui
-
-# 1. Launch a static server (Python)
-python3 -m http.server 8080
+# 1. Launch the UI in SPA mode (supports /join/<token> links)
+npx serve -s ui -l 5173
 
 # 2. Visit the app at:
-http://localhost:8080
+http://localhost:5173
 ```
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>

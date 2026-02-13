@@ -1,6 +1,6 @@
 export function createStatusPoller({
   apiClient,
-  getSessionState,
+  getAuthToken,
   onStatus,
   onError,
   config,
@@ -9,7 +9,7 @@ export function createStatusPoller({
   let pollTimer = null;
   let leaderTimer = null;
   let pollDelayMs = config.minDelayMs;
-  let lastStatusHash = '';
+  let lastStatusSignature = '';
   let isLeader = false;
 
   function setPollDelay(ms) {
@@ -21,12 +21,15 @@ export function createStatusPoller({
     return pollDelayMs;
   }
 
-  function hashStatus(status) {
-    try {
-      return JSON.stringify(status);
-    } catch {
-      return '';
-    }
+  function statusSignature(status) {
+    const me = status?.me;
+    if (!me) return '';
+
+    const peer = status.peer || {};
+    // Signature only tracks fields currently rendered by the UI.
+    return `${Number(Boolean(me.uploaded))}|${Number(Boolean(me.validated))}|${Number(
+      Boolean(peer.uploaded),
+    )}|${Number(Boolean(peer.validated))}`;
   }
 
   function electLeader() {
@@ -73,14 +76,14 @@ export function createStatusPoller({
       return;
     }
 
-    const { sessionId, userId } = getSessionState();
-    if (!sessionId || !userId) {
+    const authToken = getAuthToken();
+    if (!authToken) {
       schedule(config.nonLeaderDelayMs);
       return;
     }
 
     try {
-      const res = await apiClient.status(sessionId, userId, { cache: 'no-store' });
+      const res = await apiClient.status(authToken, { cache: 'no-store' });
 
       if (!res.ok) {
         const backoff = Math.min(config.maxDelayMs, currentBaseDelay() * 2);
@@ -92,14 +95,7 @@ export function createStatusPoller({
         return;
       }
 
-      const text = await res.text();
-      let status = null;
-
-      try {
-        status = text ? JSON.parse(text) : null;
-      } catch {
-        status = null;
-      }
+      const status = await res.json().catch(() => null);
 
       if (!status || !status.me) {
         setPollDelay(Math.min(config.maxDelayMs, currentBaseDelay() + config.idleIncrementMs));
@@ -107,11 +103,13 @@ export function createStatusPoller({
         return;
       }
 
-      const newHash = hashStatus(status);
-      const changed = newHash !== lastStatusHash;
-      lastStatusHash = newHash;
+      const newSignature = statusSignature(status);
+      const changed = newSignature !== lastStatusSignature;
+      lastStatusSignature = newSignature;
 
-      onStatus(status);
+      if (changed) {
+        onStatus(status);
+      }
 
       if (changed) {
         setPollDelay(config.minDelayMs);
@@ -154,7 +152,7 @@ export function createStatusPoller({
   }
 
   function resetState() {
-    lastStatusHash = '';
+    lastStatusSignature = '';
     setPollDelay(config.minDelayMs);
   }
 

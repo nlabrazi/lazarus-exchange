@@ -8,4 +8,4 @@ import { HealthController } from './health/health.controller';
   controllers: [ExchangeController, HealthController],
   providers: [ExchangeService],
 })
-export class AppModule { }
+export class AppModule {}
