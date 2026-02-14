@@ -1,0 +1,79 @@
+/* Responsive adjustments and reduced motion */
+@media (max-width: 940px) {
+  .control-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  body {
+    padding: 0.52rem;
+  }
+
+  .shell {
+    width: 100%;
+    padding: 0.84rem;
+  }
+
+  .window-bar {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 0.42rem;
+  }
+
+  .window-title {
+    font-size: 0.72rem;
+    width: 100%;
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+    overflow-wrap: anywhere;
+  }
+
+  .grid {
+    grid-template-columns: 1fr;
+  }
+
+  .btn-reset-top {
+    position: static;
+    width: 100%;
+    order: 3;
+  }
+
+  .meta-item {
+    min-width: 100%;
+  }
+
+  .tagline {
+    font-size: 0.8rem;
+  }
+
+  .input-row {
+    grid-template-columns: 1fr;
+  }
+
+  .btn {
+    width: 100%;
+  }
+
+  .actions {
+    flex-direction: column;
+  }
+
+  .unlock-actions {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .panel,
+  .pulse,
+  .live,
+  .cursor,
+  .shell::after,
+  .toast {
+    animation: none !important;
+    transition: none !important;
+  }
+}

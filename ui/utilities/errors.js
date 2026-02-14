@@ -50,6 +50,13 @@ export function friendlyErrorFromApi({ status, text, json }) {
     };
   }
 
+  if (status === 415) {
+    return {
+      user: "File type not allowed. Accepted: JPG, PNG, WEBP, PDF, TXT (max 10MB).",
+      dev: { status, raw },
+    };
+  }
+
   if (status === 429) {
     return {
       user: "Too many requests. Please wait a few seconds before trying again.",

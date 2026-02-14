@@ -5,6 +5,7 @@ import {
   apiOverride,
 } from './utilities/config.js';
 import {
+  clearPreviewImage,
   clearSelectedFile,
   getSelectedFile,
   getShareLinkValue,
@@ -12,6 +13,7 @@ import {
   renderExchangeStatus,
   setSessionIdDisplay,
   setShareLinkValue,
+  setPreviewImage,
   setUserDisplay,
   showToast,
 } from './utilities/dom.js';
@@ -31,6 +33,22 @@ const DEBUG =
 
 function devLog(...args) {
   if (DEBUG) console.log('[lazarus]', ...args);
+}
+
+function formatBytes(bytes) {
+  if (!Number.isFinite(bytes) || bytes < 0) return 'unknown size';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+function bindPreviewImageEvents() {
+  const previewImage = document.getElementById('previewImage');
+  if (!previewImage) return;
+  previewImage.addEventListener('error', () => {
+    showToast('Preview URL expired. Click PREVIEW to refresh.', 'error');
+    logStatus('⚠️ Preview URL expired. Click PREVIEW to refresh. █');
+  });
 }
 
 async function handleBadResponse(context, res) {
@@ -136,13 +154,37 @@ async function preview() {
 
   const data = await res.json().catch(() => null);
 
-  if (data && data.originalname) {
-    logStatus(`👀 Preview of peer file:\n${data.originalname} (${data.size} bytes) █`);
-    showToast(`Preview ready: ${data.originalname}`, 'success');
-  } else {
+  if (!data || !data.fileId) {
+    clearPreviewImage('No preview loaded yet.');
     logStatus('⏳ No file from peer yet... █');
     showToast('No file from peer yet.', 'error');
+    return;
   }
+
+  if (data.previewStatus !== 'ready') {
+    clearPreviewImage('Preview is still processing.');
+    logStatus('⏳ Peer preview is still processing... █');
+    showToast('Peer preview is still processing.', 'error');
+    return;
+  }
+
+  const previewUrlRes = await authManager.runAuthedRequest('Preview URL', (token) =>
+    apiClient.previewUrl(token, data.fileId),
+  );
+  if (!previewUrlRes) return;
+
+  const previewPayload = await previewUrlRes.json().catch(() => null);
+  if (!previewPayload?.previewUrl) {
+    clearPreviewImage('Preview URL unavailable.');
+    logStatus('⚠️ Preview URL unavailable █');
+    showToast('Preview URL unavailable.', 'error');
+    return;
+  }
+
+  const caption = `${data.originalname} • ${formatBytes(data.size)} • ${data.mimetype}`;
+  setPreviewImage(previewPayload.previewUrl, caption);
+  logStatus(`👀 Secure preview loaded:\n${data.originalname} (${formatBytes(data.size)}) █`);
+  showToast(`Preview ready: ${data.originalname}`, 'success');
 }
 
 async function validate() {
@@ -189,6 +231,7 @@ async function resetSession() {
 
   await refreshSessionUi();
   clearSelectedFile();
+  clearPreviewImage('Session reset. No preview loaded yet.');
   statusPoller.resetState();
   statusPoller.scheduleSoon(500);
 
@@ -203,13 +246,15 @@ async function resetSession() {
 
 async function init() {
   initSessionFromUrl();
+  bindPreviewImageEvents();
 
   const ready = await authManager.ensureSessionIdentity();
   if (!ready) return;
 
   await refreshSessionUi();
+  clearPreviewImage();
   const { sessionId, userId } = getSessionState();
-  logStatus(`🧠 You are: ${userId || 'unknown'}\n🔐 Session: ${sessionId || 'unknown'} █`);
+  logStatus(`🧑 You are: ${userId || '-'}\n🔐 Session: ${sessionId || '-'} █`);
 
   document.addEventListener('visibilitychange', () => {
     statusPoller.scheduleSoon();

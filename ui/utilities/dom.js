@@ -5,6 +5,8 @@ const elements = {
   shareLink: document.getElementById('shareLink'),
   fileInput: document.getElementById('fileInput'),
   statusBox: document.getElementById('statusBox'),
+  previewImage: document.getElementById('previewImage'),
+  previewCaption: document.getElementById('previewCaption'),
   toast: document.getElementById('toast'),
 };
 
@@ -55,6 +57,24 @@ export function getSelectedFile() {
 
 export function clearSelectedFile() {
   requiredElement('fileInput').value = '';
+}
+
+export function setPreviewImage(url, caption = '') {
+  const image = requiredElement('previewImage');
+  const previewCaption = requiredElement('previewCaption');
+  image.src = url;
+  image.hidden = false;
+  image.alt = caption || 'Secure blurred preview';
+  previewCaption.textContent = caption || 'Preview loaded.';
+}
+
+export function clearPreviewImage(caption = 'No preview loaded yet.') {
+  const image = requiredElement('previewImage');
+  const previewCaption = requiredElement('previewCaption');
+  image.removeAttribute('src');
+  image.hidden = true;
+  image.alt = 'Secure blurred preview from peer file';
+  previewCaption.textContent = caption;
 }
 
 export function logStatus(message) {
@@ -115,12 +135,12 @@ export function showToast(message, variant = 'success') {
 export function renderExchangeStatus(status) {
   const my = status.me;
   const peer = status.peer || { uploaded: false, validated: false };
+  const describe = (entry) =>
+    `${entry.uploaded ? '📤 Uploaded' : '📭 No upload'} • ${
+      entry.previewReady ? '👀 Preview ready' : '🛠️ Preview pending'
+    } • ${entry.validated ? '✅ Validated' : '⏳ Waiting validation'}`;
 
   logStatus(
-    `🧑 YOU:    ${my.uploaded ? '✅ Uploaded' : '❌ No file'} | ${
-      my.validated ? '✅ Validated' : '⏳ Waiting'
-    }\n👤 PEER:   ${peer.uploaded ? '✅ Uploaded' : '❌ No file'} | ${
-      peer.validated ? '✅ Validated' : '⏳ Waiting'
-    } █`,
+    `🧑 You: ${describe(my)}\n👤 Peer: ${describe(peer)} █`,
   );
 }
