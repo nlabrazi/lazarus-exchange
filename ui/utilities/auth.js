@@ -20,6 +20,7 @@ export function createAuthManager({
   apiClient,
   handleBadResponse,
   logStatus,
+  showToast = () => {},
   devLog = () => {},
 }) {
   function loadStoredAuthToken() {
@@ -72,6 +73,7 @@ export function createAuthManager({
   function getAuthTokenOrWarn() {
     const authToken = getSessionAuthToken();
     if (!authToken) {
+      showToast('Session token missing. Refresh and retry.', 'error');
       logStatus('❌ Session token missing. Refresh and retry. █');
       return null;
     }
@@ -87,6 +89,7 @@ export function createAuthManager({
 
     const data = await res.json().catch(() => null);
     if (!data?.token || !applyAuthToken(data.token)) {
+      showToast('Invalid session token received from server.', 'error');
       logStatus('❌ Invalid session token received from server. █');
       return false;
     }
@@ -106,6 +109,7 @@ export function createAuthManager({
 
     const data = await res.json().catch(() => null);
     if (!data?.token || !applyAuthToken(data.token)) {
+      showToast('Invalid token returned from invite accept.', 'error');
       logStatus('❌ Invalid token returned from invite accept. █');
       return false;
     }
@@ -146,6 +150,7 @@ export function createAuthManager({
       return res;
     } catch (error) {
       devLog(`${context} network error`, error);
+      showToast('Network error. Please check your connection and try again.', 'error');
       logStatus('❌ Network error. Please check your connection and try again. █');
       return null;
     }
