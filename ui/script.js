@@ -43,6 +43,7 @@ async function handleBadResponse(context, res) {
   const { user, dev } = friendlyErrorFromApi({ status: res.status, text, json });
   devLog(`${context} failed`, dev);
 
+  showToast(user, 'error');
   logStatus(`❌ ${user} █`);
 }
 
@@ -52,6 +53,7 @@ const authManager = createAuthManager({
   apiClient,
   handleBadResponse,
   logStatus,
+  showToast,
   devLog,
 });
 
@@ -84,6 +86,7 @@ async function refreshSessionUi() {
 async function copySessionLink() {
   const link = getShareLinkValue();
   if (!link) {
+    showToast('Share link unavailable right now.', 'error');
     logStatus('⚠️ Share link unavailable right now. █');
     return;
   }
@@ -100,6 +103,7 @@ async function copySessionLink() {
 async function upload() {
   const file = getSelectedFile();
   if (!file) {
+    showToast('No file selected.', 'error');
     logStatus('⚠️ No file selected █');
     return;
   }
@@ -115,8 +119,10 @@ async function upload() {
   const data = await res.json().catch(() => null);
   if (data?.maxFileMb) {
     logStatus(`📤 File uploaded (max ${data.maxFileMb}MB). Waiting for peer... █`);
+    showToast(`Upload complete (max ${data.maxFileMb}MB). Waiting for peer.`, 'success');
   } else {
     logStatus('📤 File uploaded. Waiting for peer... █');
+    showToast('File uploaded. Waiting for peer.', 'success');
   }
 
   statusPoller.scheduleSoon(1000);
@@ -132,8 +138,10 @@ async function preview() {
 
   if (data && data.originalname) {
     logStatus(`👀 Preview of peer file:\n${data.originalname} (${data.size} bytes) █`);
+    showToast(`Preview ready: ${data.originalname}`, 'success');
   } else {
     logStatus('⏳ No file from peer yet... █');
+    showToast('No file from peer yet.', 'error');
   }
 }
 
@@ -144,6 +152,7 @@ async function validate() {
   if (!res) return;
 
   logStatus('✅ Validation sent. Waiting for peer... █');
+  showToast('Validation sent. Waiting for peer.', 'success');
   statusPoller.scheduleSoon(1000);
 }
 
@@ -162,8 +171,10 @@ async function download() {
   link.href = URL.createObjectURL(blob);
   link.download = filename;
   link.click();
+  URL.revokeObjectURL(link.href);
 
   logStatus('⬇️ Download started █');
+  showToast(`Download started: ${filename}`, 'success');
 }
 
 async function resetSession() {
@@ -183,8 +194,10 @@ async function resetSession() {
 
   if (data?.success) {
     logStatus('🔄 Session reset. Share the new link with your peer. █');
+    showToast('Session reset. Share the new link with your peer.', 'success');
   } else {
     logStatus('⚠️ No active session on server. New session started. █');
+    showToast('No active session found. New session started.', 'success');
   }
 }
 
