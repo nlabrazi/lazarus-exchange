@@ -1,12 +1,20 @@
 import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { createClient } from '@supabase/supabase-js';
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import { ExchangeFilePolicyService } from './exchange-file-policy.service';
+import { ExchangePreviewService } from './exchange-preview.service';
+import { PreviewMeta } from './exchange-file.types';
 
 type StoredFileMeta = {
+  fileId: string;
   originalname: string;
   mimetype: string;
+  extension: string;
   size: number;
-  path: string;
+  originalPath: string;
+  previewPath: string;
+  previewStatus: 'ready';
+  previewMeta: PreviewMeta;
   uploadedAt: number;
 };
 
@@ -50,6 +58,9 @@ const MAX_MB_PER_DAY = Number(process.env.MAX_MB_PER_DAY ?? 200);
 const MAX_BYTES_PER_DAY = MAX_MB_PER_DAY * 1024 * 1024;
 const DEFAULT_JWT_TTL_SECONDS = 60 * 60 * 24 * 7;
 const DEFAULT_INVITE_TTL_SECONDS = 60 * 15;
+const DEFAULT_PREVIEW_URL_TTL_SECONDS = 180;
+const MIN_PREVIEW_URL_TTL_SECONDS = 60;
+const MAX_PREVIEW_URL_TTL_SECONDS = 300;
 const INVITE_CODE_LENGTH = 10;
 const INVITE_ALPHABET =
   'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
@@ -66,8 +77,12 @@ export class ExchangeService {
   private readonly tokenSecret: string;
   private readonly tokenTtlSeconds: number;
   private readonly inviteTtlSeconds: number;
+  private readonly previewUrlTtlSeconds: number;
 
-  constructor() {
+  constructor(
+    private readonly filePolicy: ExchangeFilePolicyService,
+    private readonly previewService: ExchangePreviewService,
+  ) {
     const url = process.env.SUPABASE_URL;
     const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
     const jwtSecret = (process.env.JWT_SECRET ?? '').trim();
@@ -109,6 +124,18 @@ export class ExchangeService {
       Number.isFinite(configuredInviteTtl) && configuredInviteTtl > 0
         ? Math.floor(configuredInviteTtl)
         : DEFAULT_INVITE_TTL_SECONDS;
+
+    const configuredPreviewTtl = Number(
+      process.env.PREVIEW_URL_TTL_SECONDS ?? DEFAULT_PREVIEW_URL_TTL_SECONDS,
+    );
+    const safePreviewTtl =
+      Number.isFinite(configuredPreviewTtl) && configuredPreviewTtl > 0
+        ? Math.floor(configuredPreviewTtl)
+        : DEFAULT_PREVIEW_URL_TTL_SECONDS;
+    this.previewUrlTtlSeconds = Math.min(
+      MAX_PREVIEW_URL_TTL_SECONDS,
+      Math.max(MIN_PREVIEW_URL_TTL_SECONDS, safePreviewTtl),
+    );
   }
 
   private generateId(prefix: 's' | 'u'): string {
@@ -481,16 +508,6 @@ export class ExchangeService {
     return null;
   }
 
-  private safeFileName(name: string): string {
-    return name.replace(/[^\w.\-() ]+/g, '_').slice(0, 180);
-  }
-
-  private buildPath(sessionId: string, userId: string, originalname: string) {
-    const stamp = Date.now();
-    const safe = this.safeFileName(originalname);
-    return `exchange/${sessionId}/${userId}/${stamp}-${safe}`;
-  }
-
   private throwStorageError(prefix: string, error: unknown): never {
     throw new HttpException(
       `${prefix}: ${this.getErrorMessage(error)}`,
@@ -506,45 +523,133 @@ export class ExchangeService {
     return 'Unknown error';
   }
 
+  private generateFileId(): string {
+    return `f_${randomBytes(9).toString('base64url')}`;
+  }
+
+  private isFileId(value: string): boolean {
+    return /^f_[A-Za-z0-9_-]{8,32}$/.test(value);
+  }
+
+  private buildOriginalPath(
+    sessionId: string,
+    fileId: string,
+    extension: string,
+  ): string {
+    return `originals/${sessionId}/${fileId}.${extension}`;
+  }
+
+  private buildPreviewPath(sessionId: string, fileId: string): string {
+    return `previews/${sessionId}/${fileId}.webp`;
+  }
+
+  private storagePathsForFile(file?: StoredFileMeta): string[] {
+    if (!file) return [];
+    return [file.originalPath, file.previewPath].filter(Boolean);
+  }
+
+  private async removePaths(paths: string[]): Promise<void> {
+    const unique = [...new Set(paths.filter(Boolean))];
+    if (unique.length === 0) return;
+
+    const { error } = await this.supabase.storage.from(BUCKET).remove(unique);
+    if (error) this.throwStorageError('Supabase remove failed', error);
+  }
+
+  private async removePathsQuietly(paths: string[]): Promise<void> {
+    const unique = [...new Set(paths.filter(Boolean))];
+    if (unique.length === 0) return;
+
+    const { error } = await this.supabase.storage.from(BUCKET).remove(unique);
+    if (error) {
+      this.logger.warn(
+        `supabase_remove_failed paths=${unique.length} error=${this.getErrorMessage(error)}`,
+      );
+    }
+  }
+
   async uploadFile(
     sessionId: string,
     userId: string,
     file: Express.Multer.File,
-  ): Promise<void> {
+  ): Promise<{
+    fileId: string;
+    previewStatus: 'ready';
+    previewMeta: PreviewMeta;
+  }> {
     this.enforceDailyLimits(userId, file.size);
 
     const session = this.getOrCreateSession(sessionId);
     session.users[userId] = session.users[userId] ?? {};
+    const previousFile = session.users[userId].file;
+    const validatedMime = this.filePolicy.detectValidatedMime(file);
 
-    const previousPath = session.users[userId].file?.path;
-    if (previousPath) {
-      const { error } = await this.supabase.storage
+    const fileId = this.generateFileId();
+    const originalPath = this.buildOriginalPath(
+      sessionId,
+      fileId,
+      validatedMime.ext,
+    );
+    const previewPath = this.buildPreviewPath(sessionId, fileId);
+    const safeName = this.filePolicy.normalizedFileName(file.originalname);
+    const uploadedPaths: string[] = [];
+
+    try {
+      const { error: originalError } = await this.supabase.storage
         .from(BUCKET)
-        .remove([previousPath]);
+        .upload(originalPath, file.buffer, {
+          contentType: validatedMime.mime,
+          upsert: true,
+        });
 
-      if (error) this.throwStorageError('Supabase remove failed', error);
+      if (originalError)
+        this.throwStorageError('Supabase upload failed', originalError);
+      uploadedPaths.push(originalPath);
+
+      const preview = await this.previewService.generatePreview(
+        file,
+        validatedMime,
+        safeName,
+      );
+
+      const { error: previewError } = await this.supabase.storage
+        .from(BUCKET)
+        .upload(previewPath, preview.bytes, {
+          contentType: 'image/webp',
+          upsert: true,
+        });
+      if (previewError)
+        this.throwStorageError('Supabase upload failed', previewError);
+      uploadedPaths.push(previewPath);
+
+      session.users[userId].file = {
+        fileId,
+        originalname: safeName,
+        mimetype: validatedMime.mime,
+        extension: validatedMime.ext,
+        size: file.size,
+        originalPath,
+        previewPath,
+        previewStatus: 'ready',
+        previewMeta: preview.meta,
+        uploadedAt: Date.now(),
+      };
+      session.users[userId].validated = false;
+
+      await this.removePathsQuietly(this.storagePathsForFile(previousFile));
+      return {
+        fileId,
+        previewStatus: 'ready',
+        previewMeta: preview.meta,
+      };
+    } catch (error) {
+      await this.removePathsQuietly(uploadedPaths);
+      if (error instanceof HttpException) throw error;
+      throw new HttpException(
+        `Upload failed: ${this.getErrorMessage(error)}`,
+        HttpStatus.BAD_GATEWAY,
+      );
     }
-
-    const path = this.buildPath(sessionId, userId, file.originalname);
-
-    const { error } = await this.supabase.storage
-      .from(BUCKET)
-      .upload(path, file.buffer, {
-        contentType: file.mimetype || 'application/octet-stream',
-        upsert: true,
-      });
-
-    if (error) this.throwStorageError('Supabase upload failed', error);
-
-    session.users[userId].file = {
-      originalname: file.originalname,
-      mimetype: file.mimetype,
-      size: file.size,
-      path,
-      uploadedAt: Date.now(),
-    };
-
-    session.users[userId].validated = false;
   }
 
   getStatus(sessionId: string, userId: string) {
@@ -556,9 +661,19 @@ export class ExchangeService {
     const peer = peerId ? session.users[peerId] : null;
 
     return {
-      me: { uploaded: Boolean(me.file), validated: Boolean(me.validated) },
+      me: {
+        uploaded: Boolean(me.file),
+        validated: Boolean(me.validated),
+        fileId: me.file?.fileId ?? null,
+        previewReady: me.file?.previewStatus === 'ready',
+      },
       peer: peer
-        ? { uploaded: Boolean(peer.file), validated: Boolean(peer.validated) }
+        ? {
+            uploaded: Boolean(peer.file),
+            validated: Boolean(peer.validated),
+            fileId: peer.file?.fileId ?? null,
+            previewReady: peer.file?.previewStatus === 'ready',
+          }
         : null,
     };
   }
@@ -573,9 +688,60 @@ export class ExchangeService {
     if (!meta) return null;
 
     return {
+      fileId: meta.fileId,
       originalname: meta.originalname,
       size: meta.size,
       mimetype: meta.mimetype,
+      previewStatus: meta.previewStatus,
+      previewMeta: meta.previewMeta,
+    };
+  }
+
+  async getPreviewSignedUrl(
+    sessionId: string,
+    userId: string,
+    fileId: string,
+  ): Promise<{
+    fileId: string;
+    previewStatus: 'ready';
+    previewUrl: string;
+    expiresIn: number;
+    previewMeta: PreviewMeta;
+  } | null> {
+    if (!this.isFileId(fileId)) {
+      throw new HttpException('Invalid file id', HttpStatus.BAD_REQUEST);
+    }
+
+    const session = this.sessions.get(sessionId);
+    if (!session || !session.users[userId]) return null;
+
+    const peerId = this.getPeerId(sessionId, userId);
+    if (!peerId) return null;
+
+    const peerFile = session.users[peerId]?.file;
+    if (!peerFile || peerFile.fileId !== fileId) return null;
+    if (peerFile.previewStatus !== 'ready' || !peerFile.previewPath) {
+      throw new HttpException('Preview is not ready yet', HttpStatus.CONFLICT);
+    }
+
+    const { data, error } = await this.supabase.storage
+      .from(BUCKET)
+      .createSignedUrl(peerFile.previewPath, this.previewUrlTtlSeconds);
+
+    if (error) this.throwStorageError('Supabase signed URL failed', error);
+    if (!data?.signedUrl) {
+      throw new HttpException(
+        'Supabase signed URL missing',
+        HttpStatus.BAD_GATEWAY,
+      );
+    }
+
+    return {
+      fileId: peerFile.fileId,
+      previewStatus: 'ready',
+      previewUrl: data.signedUrl,
+      expiresIn: this.previewUrlTtlSeconds,
+      previewMeta: peerFile.previewMeta,
     };
   }
 
@@ -618,7 +784,7 @@ export class ExchangeService {
 
     const { data, error } = await this.supabase.storage
       .from(BUCKET)
-      .createSignedUrl(meta.path, 60);
+      .createSignedUrl(meta.originalPath, 60);
 
     if (error) this.throwStorageError('Supabase signed URL failed', error);
     if (!data?.signedUrl) {
@@ -651,13 +817,12 @@ export class ExchangeService {
 
     const paths: string[] = [];
     for (const userKey in session.users) {
-      const p = session.users[userKey]?.file?.path;
-      if (p) paths.push(p);
+      const file = session.users[userKey]?.file;
+      paths.push(...this.storagePathsForFile(file));
     }
 
     if (paths.length > 0) {
-      const { error } = await this.supabase.storage.from(BUCKET).remove(paths);
-      if (error) this.throwStorageError('Supabase remove failed', error);
+      await this.removePaths(paths);
     }
 
     this.revokeSessionInvite(sessionId);

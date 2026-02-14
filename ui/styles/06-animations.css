@@ -1,0 +1,39 @@
+/* Shared keyframes */
+@keyframes blink {
+  to {
+    visibility: hidden;
+  }
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 0.65;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes crt-flicker {
+  0% {
+    opacity: 0.19;
+  }
+  50% {
+    opacity: 0.24;
+  }
+  100% {
+    opacity: 0.2;
+  }
+}

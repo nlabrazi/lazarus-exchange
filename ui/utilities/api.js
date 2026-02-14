@@ -35,6 +35,9 @@ export function createApiClient(baseUrl) {
     preview(token) {
       return fetch(endpoint('preview'), withAuth(token));
     },
+    previewUrl(token, fileId) {
+      return fetch(`${endpoint('files')}/${segment(fileId)}/preview-url`, withAuth(token));
+    },
     validate(token) {
       return fetch(endpoint('validate'), withAuth(token, { method: 'POST' }));
     },

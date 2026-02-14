@@ -19,7 +19,7 @@ import { ApiRateLimitService } from '../security/api-rate-limit.service';
 import { RateLimitRoute } from '../security/rate-limit-route.decorator';
 import { RouteRateLimitGuard } from '../security/route-rate-limit.guard';
 
-const MAX_FILE_MB = Number(process.env.MAX_FILE_MB ?? 25);
+const MAX_FILE_MB = Number(process.env.MAX_FILE_MB ?? 10);
 const MAX_FILE_BYTES = MAX_FILE_MB * 1024 * 1024;
 
 type RateLimitedRequest = Request & { rateLimitIp?: string };
@@ -84,14 +84,6 @@ export class ExchangeController {
       throw new HttpException('No file received', HttpStatus.BAD_REQUEST);
     }
 
-    const blockedMimes = new Set([
-      'application/x-msdownload',
-      'application/x-msdos-program',
-    ]);
-    if (file.mimetype && blockedMimes.has(file.mimetype)) {
-      throw new HttpException('File type not allowed', HttpStatus.BAD_REQUEST);
-    }
-
     const rateLimitedReq = req as RateLimitedRequest;
     const ip =
       rateLimitedReq.rateLimitIp ??
@@ -99,8 +91,12 @@ export class ExchangeController {
     this.apiRateLimitService.enforceUploadBytes(ip, file.size);
 
     const { sessionId, userId } = this.identityFromAuthHeader(authHeader);
-    await this.exchangeService.uploadFile(sessionId, userId, file);
-    return { success: true, maxFileMb: MAX_FILE_MB };
+    const upload = await this.exchangeService.uploadFile(
+      sessionId,
+      userId,
+      file,
+    );
+    return { ...upload, maxFileMb: MAX_FILE_MB };
   }
 
   @Get('status')
@@ -113,6 +109,23 @@ export class ExchangeController {
   getPreviewByToken(@Headers('authorization') authHeader?: string) {
     const { sessionId, userId } = this.identityFromAuthHeader(authHeader);
     return this.exchangeService.getPreview(sessionId, userId);
+  }
+
+  @Get('files/:fileId/preview-url')
+  async getPreviewUrlByToken(
+    @Param('fileId') fileId: string,
+    @Headers('authorization') authHeader?: string,
+  ) {
+    const { sessionId, userId } = this.identityFromAuthHeader(authHeader);
+    const preview = await this.exchangeService.getPreviewSignedUrl(
+      sessionId,
+      userId,
+      fileId,
+    );
+    if (!preview) {
+      throw new HttpException('Preview not found', HttpStatus.NOT_FOUND);
+    }
+    return preview;
   }
 
   @Post('validate')

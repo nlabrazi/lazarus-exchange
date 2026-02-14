@@ -28,8 +28,10 @@ export function createStatusPoller({
     const peer = status.peer || {};
     // Signature only tracks fields currently rendered by the UI.
     return `${Number(Boolean(me.uploaded))}|${Number(Boolean(me.validated))}|${Number(
-      Boolean(peer.uploaded),
-    )}|${Number(Boolean(peer.validated))}`;
+      Boolean(me.previewReady),
+    )}|${Number(Boolean(peer.uploaded))}|${Number(Boolean(peer.validated))}|${Number(
+      Boolean(peer.previewReady),
+    )}`;
   }
 
   function electLeader() {

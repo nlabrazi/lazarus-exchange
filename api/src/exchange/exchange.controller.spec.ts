@@ -20,6 +20,7 @@ describe('ExchangeController', () => {
             uploadFile: jest.fn(),
             getStatus: jest.fn(),
             getPreview: jest.fn(),
+            getPreviewSignedUrl: jest.fn(),
             validate: jest.fn(),
             canDownload: jest.fn(),
             getPeerFileDownload: jest.fn(),

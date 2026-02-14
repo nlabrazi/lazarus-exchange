@@ -1,4 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { ExchangeFilePolicyService } from './exchange-file-policy.service';
+import { ExchangePreviewService } from './exchange-preview.service';
 import { ExchangeService } from './exchange.service';
 
 describe('ExchangeService', () => {
@@ -11,7 +13,11 @@ describe('ExchangeService', () => {
     process.env.JWT_SECRET = 'jwt_secret_for_tests_only_12345678901234567890';
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [ExchangeService],
+      providers: [
+        ExchangeService,
+        ExchangeFilePolicyService,
+        ExchangePreviewService,
+      ],
     }).compile();
 
     service = module.get<ExchangeService>(ExchangeService);

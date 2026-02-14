@@ -1,0 +1,52 @@
+/* Preview media and live console area */
+pre {
+  margin: 0;
+  min-height: 164px;
+  border: 1px dashed rgba(84, 217, 154, 0.35);
+  border-radius: 10px;
+  background: linear-gradient(180deg, rgba(2, 9, 6, 0.96), rgba(1, 5, 3, 0.98));
+  color: #b1dfc8;
+  padding: 0.9rem;
+  line-height: 1.42;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.preview-pane {
+  border: 1px dashed rgba(84, 217, 154, 0.35);
+  border-radius: 10px;
+  background: linear-gradient(180deg, rgba(3, 10, 7, 0.97), rgba(1, 6, 4, 0.98));
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-height: 212px;
+  height: 100%;
+}
+
+#previewImage {
+  width: 100%;
+  max-height: 208px;
+  object-fit: contain;
+  border: 1px solid rgba(84, 217, 154, 0.24);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+#previewImage[hidden] {
+  display: none;
+}
+
+.preview-caption {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.73rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.cursor {
+  display: inline-block;
+  width: 1ch;
+  animation: blink 1s steps(2, start) infinite;
+}

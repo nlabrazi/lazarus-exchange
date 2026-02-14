@@ -21,76 +21,87 @@
     </div>
 
     <header class="mast">
-      <div class="brand">
-        <p class="bootline">
-          <span class="boot-prompt">root@lazarus:~$</span>
-          <span class="boot-command">init handshake --mode fair-exchange</span>
-        </p>
-        <h1 class="title">Lazarus Exchange</h1>
-        <p class="tagline">
-          Two-party exchange. Upload on both sides, validate on both sides, then unlock download.
-        </p>
-      </div>
-
-      <div class="meta">
+      <button class="btn btn-reset btn-reset-top" onclick="resetSession()">♻️ RESET</button>
+      <h1 class="title">Lazarus Exchange</h1>
+      <p class="tagline">Upload both files, review a blurred preview, then both validate to unlock download.</p>
+      <div class="meta-compact">
         <div class="meta-item">
-          <span class="meta-label">SESSION</span>
+          <span class="meta-label">🔐 SESSION</span>
           <span id="sessionIdDisplay" class="meta-value"></span>
         </div>
         <div class="meta-item">
-          <span class="meta-label">YOU</span>
+          <span class="meta-label">🧑 YOU</span>
           <span id="youDisplay" class="meta-value"></span>
         </div>
       </div>
     </header>
 
     <div class="grid">
-      <section class="panel">
+      <section class="panel panel-control">
         <div class="panel-title">
-          <h2>01. Pair Link</h2>
+          <h2>Channel</h2>
+          <button class="hint-dot" aria-label="Channel help"
+            data-hint="Share the link once, then upload your file and request preview.">?</button>
         </div>
-        <p class="hint">Share this link with your partner to join your secure channel.</p>
-        <div class="input-row">
-          <input id="shareLink" readonly />
-          <button class="btn btn-primary btn-copy" onclick="copySessionLink()">COPY</button>
+        <div class="control-grid">
+          <div class="control-block">
+            <label class="field">Share Link</label>
+            <div class="input-row">
+              <input id="shareLink" readonly />
+              <button class="btn btn-primary btn-copy" onclick="copySessionLink()">📋 COPY</button>
+            </div>
+          </div>
+
+          <div class="control-block">
+            <label class="field">Payload</label>
+            <input id="fileInput" type="file"
+              accept=".jpg,.jpeg,.png,.webp,.pdf,.txt,image/jpeg,image/png,image/webp,application/pdf,text/plain" />
+            <div class="actions">
+              <button class="btn btn-upload" onclick="upload()">📤 UPLOAD</button>
+              <button class="btn btn-preview" onclick="preview()">👀 PREVIEW</button>
+            </div>
+          </div>
         </div>
       </section>
 
-      <section class="panel">
+      <section class="panel panel-preview">
         <div class="panel-title">
-          <h2>02. Payload</h2>
+          <h2>Preview</h2>
+          <button class="hint-dot" aria-label="Preview help"
+            data-hint="Preview is partial and blurred. Original file remains locked until both users validate.">?</button>
         </div>
-        <label class="field">File to send</label>
-        <input id="fileInput" type="file" />
-        <div class="actions">
-          <button class="btn btn-upload" onclick="upload()">UPLOAD</button>
-          <button class="btn btn-preview" onclick="preview()">PREVIEW</button>
+        <section class="preview-pane" aria-live="polite">
+          <img id="previewImage" alt="Secure blurred preview from peer file" hidden />
+          <p id="previewCaption" class="preview-caption">No preview loaded yet.</p>
+        </section>
+        <div class="unlock-box">
+          <div class="panel-title unlock-title">
+            <h2>Unlock</h2>
+            <button class="hint-dot" aria-label="Unlock help"
+              data-hint="Both users must validate before download is allowed.">?</button>
+          </div>
+          <div class="actions unlock-actions">
+            <button class="btn btn-validate" onclick="validate()">✅ VALIDATE</button>
+            <button class="btn btn-download" onclick="download()">⬇️ DOWNLOAD</button>
+          </div>
         </div>
-      </section>
-
-      <section class="panel">
-        <div class="panel-title">
-          <h2>03. Validation</h2>
-        </div>
-        <div class="actions">
-          <button class="btn btn-validate" onclick="validate()">VALIDATE</button>
-          <button class="btn btn-download" onclick="download()">DOWNLOAD</button>
-          <button class="btn btn-reset" onclick="resetSession()">RESET</button>
-        </div>
-        <p class="hint">Each user validates before download.</p>
       </section>
 
       <section class="panel panel-status">
-        <div class="panel-title">
+        <div class="panel-title panel-title-status">
           <h2>Console</h2>
-          <span class="live">LIVE</span>
+          <div class="title-tools">
+            <span class="live">LIVE</span>
+            <button class="hint-dot" aria-label="Console help"
+              data-hint="Live status of your step and peer step.">?</button>
+          </div>
         </div>
         <pre id="statusBox">Connecting<span class="cursor">█</span></pre>
       </section>
     </div>
 
     <footer class="footer">
-      <span>No account. Ephemeral session. JWT in Authorization header only.</span>
+      <span>Ephemeral session • signed preview URLs • private storage</span>
       <span class="pulse">READY</span>
     </footer>
 
