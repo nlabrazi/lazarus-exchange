@@ -116,6 +116,68 @@ npx serve -s ui -l 5173
 http://localhost:5173
 ```
 
+### 🐳 Docker / VPS deployment
+
+This repository now includes:
+
+- `docker-compose.yml` as the single Docker Compose file
+- `ui/Dockerfile` for the static SPA
+- `api/Dockerfile` for the NestJS API
+
+The intended production topology is:
+
+- one public domain for the UI
+- the API exposed on the same domain under `/exchange*`
+- the stack attached to the same external Docker network as the central Caddy reverse proxy
+
+```bash
+# 1. Prepare the API environment file
+cp api/.env.example api/.env
+
+# 2. Local start
+docker compose up -d --build
+```
+
+Local URLs:
+
+- UI: `http://localhost:3000`
+- API: proxied by the UI on `http://localhost:3000/exchange`
+
+For VPS behind the central Caddy reverse proxy:
+
+```bash
+# 1. Create the shared Docker network once (if it does not already exist)
+docker network create web
+
+# 2. Start the same compose file on the shared network
+DOCKER_NETWORK_NAME=web DOCKER_NETWORK_EXTERNAL=true docker compose up -d --build
+```
+
+Recommended Caddy snippet:
+
+```caddy
+lazarus.nabster.dev {
+    reverse_proxy /exchange* lazarus-api:3000
+    reverse_proxy /health* lazarus-api:3000
+    reverse_proxy lazarus-ui:8080
+}
+```
+
+Important deployment note:
+
+- the current UI expects the production API on the same host under `/exchange`
+- if you want a dedicated API subdomain later, you should first make the UI API base configurable and open CORS accordingly
+
+Useful commands:
+
+```bash
+docker compose ps
+docker compose logs -f lazarus-ui
+docker compose logs -f lazarus-api
+docker compose up -d --build
+DOCKER_NETWORK_NAME=web DOCKER_NETWORK_EXTERNAL=true docker compose up -d --build
+```
+
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 

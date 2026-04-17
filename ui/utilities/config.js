@@ -2,14 +2,7 @@ const params = new URLSearchParams(window.location.search);
 
 export const apiOverride = params.get('api');
 
-const isLocalHost =
-  location.hostname === 'localhost' ||
-  location.hostname === '127.0.0.1' ||
-  location.hostname === '::1';
-
-const defaultApiBase = isLocalHost
-  ? 'http://localhost:3000/exchange'
-  : `${location.origin}/exchange`;
+const defaultApiBase = `${location.origin}/exchange`;
 
 export const API_BASE = apiOverride || defaultApiBase;
 export const AUTH_TOKEN_STORAGE_KEY = `lazarus_auth_token_${location.origin}`;
