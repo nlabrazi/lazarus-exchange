@@ -1,0 +1,15 @@
+services:
+  lazarus-ui:
+    ports: !reset []
+    networks:
+      - app
+      - web
+
+  lazarus-api:
+    networks:
+      - app
+      - web
+
+networks:
+  web:
+    external: true
