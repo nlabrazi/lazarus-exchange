@@ -57,21 +57,25 @@
 It’s designed to prevent scams by enforcing mutual visibility and agreement before any download is allowed.
 
 - 🔐 Secure: Files are never exposed until both users have uploaded and validated the exchange
-- 🧑‍🤝‍🧑 Two-party sessions: Each session has two roles identified automatically via URL + localStorage
+- 🧑‍🤝‍🧑 Two-party sessions: Each session is identified automatically via invite URL + session-scoped auth token
 - 🧾 Preview first: Each party can inspect the file preview before agreeing
 - ✅ Fair trade enforcement: Only after both validations, the files become downloadable
-- 🧨 Temporary by design: Data is deleted or locked after exchange to ensure privacy
+- 🧨 Temporary by design: Session state expires automatically and files stay locked until the exchange is completed
 - 🕹️ Retro hacker-style interface: Terminal look & feel for nostalgic user
 
 ---
 
-## 🚀 Planned Features
+## 🚀 Current Scope
 
-- ✅ Real-time sync between two users in a shared session
+- ✅ Automatic status sync between two users via background polling
 - 🔐 Files are locked until **both users upload + validate**
 - 🧾 Preview before final validation
 - 🎮 Retro terminal-style UI
-- 🧨 Auto-expiry and cleanup of sessions (future)
+- 🧨 Automatic session expiry and in-memory cleanup
+- 🧹 Expired session file cleanup in background
+
+## 🧭 Planned Features
+
 - 🧩 Option to add optional password protection per session (future)
 
 ---
