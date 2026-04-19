@@ -834,8 +834,20 @@ export class ExchangeService implements OnModuleDestroy {
 
   validate(sessionId: string, userId: string) {
     this.cleanupExpiredState();
-    const session = this.getOrCreateSession(sessionId);
-    session.users[userId] = session.users[userId] ?? {};
+    const session = this.sessions.get(sessionId);
+    const currentUser = session?.users[userId];
+
+    if (!session || !currentUser) {
+      throw new HttpException('Session not found', HttpStatus.NOT_FOUND);
+    }
+
+    if (!currentUser.file) {
+      throw new HttpException(
+        'Upload a file before validating',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
     session.users[userId].validated = true;
     return true;
   }

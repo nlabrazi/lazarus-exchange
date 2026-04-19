@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { HttpException, HttpStatus } from '@nestjs/common';
 import { ExchangeFilePolicyService } from './exchange-file-policy.service';
 import { ExchangePreviewService } from './exchange-preview.service';
 import { ExchangeService } from './exchange.service';
@@ -66,5 +67,20 @@ describe('ExchangeService', () => {
 
     nowSpy.mockReturnValue(issued.expiresAt + 1);
     expect(service.getStatus(issued.sessionId, issued.userId)).toBeNull();
+  });
+
+  it('rejects validation when the current user has not uploaded a file yet', () => {
+    const issued = service.createSessionTokenForNewUser();
+
+    try {
+      service.validate(issued.sessionId, issued.userId);
+      fail('validate should have thrown');
+    } catch (error) {
+      expect(error).toBeInstanceOf(HttpException);
+      expect((error as HttpException).getStatus()).toBe(HttpStatus.BAD_REQUEST);
+      expect((error as HttpException).message).toBe(
+        'Upload a file before validating',
+      );
+    }
   });
 });
