@@ -1,4 +1,10 @@
-import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
+import {
+  HttpException,
+  HttpStatus,
+  Injectable,
+  Logger,
+  OnModuleDestroy,
+} from '@nestjs/common';
 import { createClient } from '@supabase/supabase-js';
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { ExchangeFilePolicyService } from './exchange-file-policy.service';
@@ -25,6 +31,7 @@ type FileData = {
 
 type SessionData = {
   users: Record<string, FileData>;
+  expiresAt: number;
 };
 
 type DailyUsage = {
@@ -70,12 +77,13 @@ const DEFAULT_INVITE_TTL_SECONDS = 60 * 15;
 const DEFAULT_PREVIEW_URL_TTL_SECONDS = 180;
 const MIN_PREVIEW_URL_TTL_SECONDS = 60;
 const MAX_PREVIEW_URL_TTL_SECONDS = 300;
+const SESSION_CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
 const INVITE_CODE_LENGTH = 10;
 const INVITE_ALPHABET =
   'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
 
 @Injectable()
-export class ExchangeService {
+export class ExchangeService implements OnModuleDestroy {
   private readonly logger = new Logger(ExchangeService.name);
   private readonly sessions = new Map<string, SessionData>();
   private readonly dailyUsage = new Map<string, DailyUsage>();
@@ -87,6 +95,9 @@ export class ExchangeService {
   private readonly tokenTtlSeconds: number;
   private readonly inviteTtlSeconds: number;
   private readonly previewUrlTtlSeconds: number;
+  private readonly sessionTtlMs: number;
+  private activeUsageDay = this.dayStamp(Date.now());
+  private readonly cleanupTimer: NodeJS.Timeout;
 
   constructor(
     private readonly filePolicy: ExchangeFilePolicyService,
@@ -145,6 +156,16 @@ export class ExchangeService {
       MAX_PREVIEW_URL_TTL_SECONDS,
       Math.max(MIN_PREVIEW_URL_TTL_SECONDS, safePreviewTtl),
     );
+    this.sessionTtlMs = this.tokenTtlSeconds * 1000;
+
+    this.cleanupTimer = setInterval(() => {
+      this.cleanupExpiredState();
+    }, SESSION_CLEANUP_INTERVAL_MS);
+    this.cleanupTimer.unref?.();
+  }
+
+  onModuleDestroy() {
+    clearInterval(this.cleanupTimer);
   }
 
   private generateId(prefix: 's' | 'u'): string {
@@ -233,7 +254,7 @@ export class ExchangeService {
   }
 
   private createSessionInvite(sessionId: string, creatorUserId: string) {
-    this.cleanupExpiredInvites();
+    this.cleanupExpiredState();
 
     // Reuse an unexpired invite for the same session to reduce churn on hot UIs.
     const currentCode = this.inviteBySession.get(sessionId);
@@ -280,14 +301,36 @@ export class ExchangeService {
     }
   }
 
-  private cleanupExpiredInvites(): void {
-    const nowMs = Date.now();
+  private cleanupExpiredInvites(nowMs: number): void {
     for (const [inviteCode, invite] of this.invites.entries()) {
       if (nowMs < invite.expiresAt) continue;
       this.removeInvite(inviteCode);
       this.logger.log(
         `invite_expired session=${invite.sessionId} creator=${invite.creatorUserId} code=${inviteCode}`,
       );
+    }
+  }
+
+  private cleanupExpiredState(nowMs = Date.now()): void {
+    this.rotateDailyUsageBuckets(nowMs);
+    this.cleanupExpiredInvites(nowMs);
+
+    const expiredPaths: string[] = [];
+    for (const [sessionId, session] of this.sessions.entries()) {
+      if (nowMs < session.expiresAt) continue;
+
+      for (const userId in session.users) {
+        expiredPaths.push(...this.storagePathsForFile(session.users[userId]?.file));
+      }
+
+      this.sessions.delete(sessionId);
+      this.sessionEpoch.delete(sessionId);
+      this.revokeSessionInvite(sessionId);
+      this.logger.log(`session_expired session=${sessionId}`);
+    }
+
+    if (expiredPaths.length > 0) {
+      void this.removePathsQuietly(expiredPaths);
     }
   }
 
@@ -401,9 +444,13 @@ export class ExchangeService {
     token: string;
     expiresAt: number;
   } {
+    this.cleanupExpiredState();
     const sessionId = this.generateId('s');
     const userId = this.generateId('u');
-    return this.issueSessionToken(sessionId, userId, 'auth_new');
+    const issued = this.issueSessionToken(sessionId, userId, 'auth_new');
+    const session = this.getOrCreateSession(sessionId, issued.expiresAt);
+    session.users[userId] = session.users[userId] ?? {};
+    return issued;
   }
 
   createInvite(
@@ -413,13 +460,16 @@ export class ExchangeService {
     inviteCode: string;
     expiresAt: number;
   } {
+    this.cleanupExpiredState();
+    const session = this.getOrCreateSession(sessionId);
+    session.users[userId] = session.users[userId] ?? {};
     return this.createSessionInvite(sessionId, userId);
   }
 
   acceptInvite(
     inviteCode: string,
   ): SessionIdentity & { token: string; expiresAt: number } {
-    this.cleanupExpiredInvites();
+    this.cleanupExpiredState();
 
     const invite = this.invites.get(inviteCode);
     if (!invite) {
@@ -464,19 +514,34 @@ export class ExchangeService {
       `invite_accepted session=${invite.sessionId} creator=${invite.creatorUserId} user=${userId}`,
     );
 
-    return this.issueSessionToken(invite.sessionId, userId, 'invite_accept');
+    const issued = this.issueSessionToken(invite.sessionId, userId, 'invite_accept');
+    this.getOrCreateSession(invite.sessionId, issued.expiresAt);
+    return issued;
   }
 
-  private todayKey(userId: string): string {
-    const now = new Date();
-    const yyyy = now.getFullYear();
-    const mm = String(now.getMonth() + 1).padStart(2, '0');
-    const dd = String(now.getDate()).padStart(2, '0');
-    return `${yyyy}-${mm}-${dd}:${userId}`;
+  private usageKey(userId: string): string {
+    return `${this.activeUsageDay}:${userId}`;
+  }
+
+  private dayStamp(nowMs: number): string {
+    const d = new Date(nowMs);
+    const yyyy = d.getUTCFullYear();
+    const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const dd = String(d.getUTCDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  }
+
+  private rotateDailyUsageBuckets(nowMs: number): void {
+    const currentDay = this.dayStamp(nowMs);
+    if (currentDay === this.activeUsageDay) return;
+
+    this.activeUsageDay = currentDay;
+    this.dailyUsage.clear();
   }
 
   private enforceDailyLimits(userId: string, sizeBytes: number): void {
-    const key = this.todayKey(userId);
+    this.rotateDailyUsageBuckets(Date.now());
+    const key = this.usageKey(userId);
     const usage = this.dailyUsage.get(key) ?? { count: 0, bytes: 0 };
 
     if (usage.count + 1 > MAX_UPLOADS_PER_DAY) {
@@ -498,12 +563,21 @@ export class ExchangeService {
     this.dailyUsage.set(key, usage);
   }
 
-  private getOrCreateSession(sessionId: string): SessionData {
+  private getOrCreateSession(
+    sessionId: string,
+    expiresAt = Date.now() + this.sessionTtlMs,
+  ): SessionData {
     let session = this.sessions.get(sessionId);
     if (!session) {
-      session = { users: {} };
+      session = { users: {}, expiresAt };
       this.sessions.set(sessionId, session);
+      return session;
     }
+
+    if (expiresAt > session.expiresAt) {
+      session.expiresAt = expiresAt;
+    }
+
     return session;
   }
 
@@ -586,6 +660,7 @@ export class ExchangeService {
     previewStatus: 'ready';
     previewMeta: PreviewMeta;
   }> {
+    this.cleanupExpiredState();
     this.enforceDailyLimits(userId, file.size);
 
     const session = this.getOrCreateSession(sessionId);
@@ -662,6 +737,7 @@ export class ExchangeService {
   }
 
   getStatus(sessionId: string, userId: string) {
+    this.cleanupExpiredState();
     const session = this.sessions.get(sessionId);
     if (!session || !session.users[userId]) return null;
 
@@ -688,6 +764,7 @@ export class ExchangeService {
   }
 
   getPreview(sessionId: string, userId: string) {
+    this.cleanupExpiredState();
     const session = this.sessions.get(sessionId);
     if (!session) return null;
 
@@ -717,6 +794,7 @@ export class ExchangeService {
     expiresIn: number;
     previewMeta: PreviewMeta;
   } | null> {
+    this.cleanupExpiredState();
     if (!this.isFileId(fileId)) {
       throw new HttpException('Invalid file id', HttpStatus.BAD_REQUEST);
     }
@@ -755,6 +833,7 @@ export class ExchangeService {
   }
 
   validate(sessionId: string, userId: string) {
+    this.cleanupExpiredState();
     const session = this.getOrCreateSession(sessionId);
     session.users[userId] = session.users[userId] ?? {};
     session.users[userId].validated = true;
@@ -762,6 +841,7 @@ export class ExchangeService {
   }
 
   canDownload(sessionId: string, userId: string): boolean {
+    this.cleanupExpiredState();
     const session = this.sessions.get(sessionId);
     if (!session || !session.users[userId]) return false;
 
@@ -782,6 +862,7 @@ export class ExchangeService {
     mimetype: string;
     bytes: Uint8Array;
   } | null> {
+    this.cleanupExpiredState();
     const session = this.sessions.get(sessionId);
     if (!session || !session.users[userId]) return null;
 
@@ -821,6 +902,7 @@ export class ExchangeService {
   }
 
   async resetSession(sessionId: string, userId: string): Promise<boolean> {
+    this.cleanupExpiredState();
     const session = this.sessions.get(sessionId);
     if (!session || !session.users[userId]) return false;
 
