@@ -8,6 +8,6 @@
   },
   "devDependencies": {
     "concurrently": "^8.2.2",
-    "serve": "^14.2.5"
+    "serve": "^14.2.6"
   }
 }

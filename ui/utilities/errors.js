@@ -1,7 +1,20 @@
 export function friendlyErrorFromApi({ status, text, json }) {
   const raw = text || (json ? JSON.stringify(json) : '');
+  const message =
+    typeof json?.message === 'string'
+      ? json.message
+      : Array.isArray(json?.message) && typeof json.message[0] === 'string'
+        ? json.message[0]
+        : '';
 
   if (status === 400) {
+    if (message === 'Upload a file before validating') {
+      return {
+        user: "Upload your own file before sending validation.",
+        dev: { status, raw },
+      };
+    }
+
     return {
       user: "Invalid request. Please refresh the page and try again.",
       dev: { status, raw },
