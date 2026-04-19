@@ -135,10 +135,15 @@ export function showToast(message, variant = 'success') {
 export function renderExchangeStatus(status) {
   const my = status.me;
   const peer = status.peer || { uploaded: false, validated: false };
+  const validationState = (entry) => {
+    if (!entry.uploaded) return '✍️ Upload required';
+    return entry.validated ? '✅ Validated' : '⏳ Waiting validation';
+  };
+
   const describe = (entry) =>
     `${entry.uploaded ? '📤 Uploaded' : '📭 No upload'} • ${
       entry.previewReady ? '👀 Preview ready' : '🛠️ Preview pending'
-    } • ${entry.validated ? '✅ Validated' : '⏳ Waiting validation'}`;
+    } • ${validationState(entry)}`;
 
   logStatus(
     `🧑 You: ${describe(my)}\n👤 Peer: ${describe(peer)} █`,

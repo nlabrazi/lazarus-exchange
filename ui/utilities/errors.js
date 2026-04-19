@@ -29,8 +29,18 @@ export function friendlyErrorFromApi({ status, text, json }) {
   }
 
   if (status === 403) {
+    if (
+      message === 'Both parties must validate first' ||
+      raw.includes('Both parties must validate first')
+    ) {
+      return {
+        user: "Download stays locked until both users upload and validate.",
+        dev: { status, raw },
+      };
+    }
+
     return {
-      user: "Access denied. This session is not valid anymore.",
+      user: "Access denied. This session is no longer valid.",
       dev: { status, raw },
     };
   }
@@ -65,7 +75,7 @@ export function friendlyErrorFromApi({ status, text, json }) {
 
   if (status === 415) {
     return {
-      user: "File type not allowed. Accepted: JPG, PNG, WEBP, PDF, TXT (max 10MB).",
+      user: "File type not allowed. Accepted: JPG, PNG, WEBP, PDF, TXT.",
       dev: { status, raw },
     };
   }
