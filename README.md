@@ -164,7 +164,7 @@ Recommended Caddy snippet:
 ```caddy
 lazarus.nabster.dev {
     reverse_proxy /exchange* lazarus-api:3000
-    reverse_proxy /health* lazarus-api:3000
+    reverse_proxy /health lazarus-api:3000
     reverse_proxy lazarus-ui:8080
 }
 ```
