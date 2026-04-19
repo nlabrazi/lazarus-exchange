@@ -1,6 +1,7 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { extname } from 'node:path';
 import { ValidatedMime } from './exchange-file.types';
+import { decodeUtf8Text } from './exchange-shared.utils';
 
 const ALLOWED_MIME_SET = new Set<ValidatedMime['mime']>([
   'image/jpeg',
@@ -99,7 +100,7 @@ export class ExchangeFilePolicyService {
 
     const validatedMime = mime as ValidatedMime['mime'];
     if (validatedMime === 'text/plain') {
-      const text = this.decodeTextUtf8(file.buffer);
+      const text = decodeUtf8Text(file.buffer);
       this.validateTextPolicy(text, claimedMime, extension);
     }
 
@@ -169,15 +170,6 @@ export class ExchangeFilePolicyService {
     }
 
     return '';
-  }
-
-  private decodeTextUtf8(buffer: Buffer): string {
-    if (!buffer.length) return '';
-    try {
-      return new TextDecoder('utf-8', { fatal: true }).decode(buffer);
-    } catch {
-      return new TextDecoder('utf-8').decode(buffer);
-    }
   }
 
   private isLikelyUtf8Text(buffer: Buffer): boolean {

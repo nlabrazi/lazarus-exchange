@@ -10,6 +10,10 @@ import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { ExchangeFilePolicyService } from './exchange-file-policy.service';
 import { ExchangePreviewService } from './exchange-preview.service';
 import { PreviewMeta } from './exchange-file.types';
+import {
+  errorMessageFromUnknown,
+  readPositiveIntEnv,
+} from './exchange-shared.utils';
 
 type StoredFileMeta = {
   fileId: string;
@@ -58,15 +62,6 @@ type InviteData = {
   creatorUserId: string;
   expiresAt: number;
 };
-
-function readPositiveIntEnv(envKey: string, fallback: number): number {
-  const raw = (process.env[envKey] ?? '').trim();
-  const parsed = raw ? Number(raw) : fallback;
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    return fallback;
-  }
-  return Math.floor(parsed);
-}
 
 const BUCKET = (process.env.SUPABASE_BUCKET ?? '').trim() || 'exchange';
 const MAX_UPLOADS_PER_DAY = readPositiveIntEnv('MAX_UPLOADS_PER_DAY', 15);
@@ -593,17 +588,9 @@ export class ExchangeService implements OnModuleDestroy {
 
   private throwStorageError(prefix: string, error: unknown): never {
     throw new HttpException(
-      `${prefix}: ${this.getErrorMessage(error)}`,
+      `${prefix}: ${errorMessageFromUnknown(error)}`,
       HttpStatus.BAD_GATEWAY,
     );
-  }
-
-  private getErrorMessage(err: unknown): string {
-    if (typeof err === 'object' && err !== null && 'message' in err) {
-      const msg = (err as { message?: unknown }).message;
-      if (typeof msg === 'string') return msg;
-    }
-    return 'Unknown error';
   }
 
   private generateFileId(): string {
@@ -646,7 +633,7 @@ export class ExchangeService implements OnModuleDestroy {
     const { error } = await this.supabase.storage.from(BUCKET).remove(unique);
     if (error) {
       this.logger.warn(
-        `supabase_remove_failed paths=${unique.length} error=${this.getErrorMessage(error)}`,
+        `supabase_remove_failed paths=${unique.length} error=${errorMessageFromUnknown(error)}`,
       );
     }
   }
@@ -730,7 +717,7 @@ export class ExchangeService implements OnModuleDestroy {
       await this.removePathsQuietly(uploadedPaths);
       if (error instanceof HttpException) throw error;
       throw new HttpException(
-        `Upload failed: ${this.getErrorMessage(error)}`,
+        `Upload failed: ${errorMessageFromUnknown(error)}`,
         HttpStatus.BAD_GATEWAY,
       );
     }

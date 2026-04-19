@@ -18,15 +18,7 @@ import { Request, Response } from 'express';
 import { ApiRateLimitService } from '../security/api-rate-limit.service';
 import { RateLimitRoute } from '../security/rate-limit-route.decorator';
 import { RouteRateLimitGuard } from '../security/route-rate-limit.guard';
-
-function readPositiveIntEnv(envKey: string, fallback: number): number {
-  const raw = (process.env[envKey] ?? '').trim();
-  const parsed = raw ? Number(raw) : fallback;
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    return fallback;
-  }
-  return Math.floor(parsed);
-}
+import { readPositiveIntEnv } from './exchange-shared.utils';
 
 const MAX_FILE_MB = readPositiveIntEnv('MAX_FILE_MB', 10);
 const MAX_FILE_BYTES = MAX_FILE_MB * 1024 * 1024;
