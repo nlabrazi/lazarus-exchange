@@ -25,7 +25,7 @@ export function createAuthManager({
 }) {
   function loadStoredAuthToken() {
     try {
-      return localStorage.getItem(AUTH_TOKEN_STORAGE_KEY) || '';
+      return sessionStorage.getItem(AUTH_TOKEN_STORAGE_KEY) || '';
     } catch {
       return '';
     }
@@ -33,8 +33,9 @@ export function createAuthManager({
 
   function saveStoredAuthToken(token) {
     try {
-      // Keep auth in localStorage to survive refreshes without rejoining session.
-      localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, token);
+      // Keep auth in sessionStorage to survive refreshes without persisting across
+      // browser restarts or unrelated tabs on this origin.
+      sessionStorage.setItem(AUTH_TOKEN_STORAGE_KEY, token);
     } catch {
       // noop
     }
@@ -42,7 +43,7 @@ export function createAuthManager({
 
   function clearStoredAuthToken() {
     try {
-      localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
+      sessionStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
     } catch {
       // noop
     }

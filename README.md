@@ -113,8 +113,14 @@ npm run start:dev
 npx serve -s ui -l 5173
 
 # 2. Visit the app at:
-http://localhost:5173
+http://localhost:5173?api=http://localhost:3000/exchange
 ```
+
+Why the `?api=...` query parameter in local dev:
+
+- the static UI runs on `5173`
+- the Nest API runs on `3000`
+- the override is intentionally limited to same-origin or loopback targets in the UI code
 
 ### 🐳 Docker / VPS deployment
 
