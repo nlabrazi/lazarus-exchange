@@ -1,6 +1,35 @@
 const params = new URLSearchParams(window.location.search);
 
-export const apiOverride = params.get('api');
+function isLoopbackHost(hostname) {
+  return (
+    hostname === 'localhost' ||
+    hostname === '127.0.0.1' ||
+    hostname === '[::1]' ||
+    hostname === '::1'
+  );
+}
+
+function normalizeApiBase(rawValue) {
+  if (!rawValue) return '';
+
+  try {
+    const parsed = new URL(rawValue, location.origin);
+    const isSameOrigin = parsed.origin === location.origin;
+    const allowLoopbackOverride =
+      isLoopbackHost(location.hostname) && isLoopbackHost(parsed.hostname);
+
+    if (!isSameOrigin && !allowLoopbackOverride) {
+      return '';
+    }
+
+    const normalizedPath = parsed.pathname.replace(/\/+$/, '');
+    return `${parsed.origin}${normalizedPath}`;
+  } catch {
+    return '';
+  }
+}
+
+export const apiOverride = normalizeApiBase(params.get('api'));
 
 const defaultApiBase = `${location.origin}/exchange`;
 

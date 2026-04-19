@@ -52,9 +52,18 @@ type InviteData = {
   expiresAt: number;
 };
 
-const BUCKET = process.env.SUPABASE_BUCKET ?? 'exchange';
-const MAX_UPLOADS_PER_DAY = Number(process.env.MAX_UPLOADS_PER_DAY ?? 15);
-const MAX_MB_PER_DAY = Number(process.env.MAX_MB_PER_DAY ?? 200);
+function readPositiveIntEnv(envKey: string, fallback: number): number {
+  const raw = (process.env[envKey] ?? '').trim();
+  const parsed = raw ? Number(raw) : fallback;
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+  return Math.floor(parsed);
+}
+
+const BUCKET = (process.env.SUPABASE_BUCKET ?? '').trim() || 'exchange';
+const MAX_UPLOADS_PER_DAY = readPositiveIntEnv('MAX_UPLOADS_PER_DAY', 15);
+const MAX_MB_PER_DAY = readPositiveIntEnv('MAX_MB_PER_DAY', 200);
 const MAX_BYTES_PER_DAY = MAX_MB_PER_DAY * 1024 * 1024;
 const DEFAULT_JWT_TTL_SECONDS = 60 * 60 * 24 * 7;
 const DEFAULT_INVITE_TTL_SECONDS = 60 * 15;
