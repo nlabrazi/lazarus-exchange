@@ -2,6 +2,10 @@ import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
 import sharp = require('sharp');
 import { PDFParse } from 'pdf-parse';
 import { GeneratedPreview, ValidatedMime } from './exchange-file.types';
+import {
+  decodeUtf8Text,
+  errorMessageFromUnknown,
+} from './exchange-shared.utils';
 
 const PREVIEW_WEBP_QUALITY = 58;
 const TEXT_PREVIEW_WIDTH = 1200;
@@ -28,7 +32,7 @@ export class ExchangePreviewService {
         return this.generatePdfPreview(file.buffer, safeFileName);
 
       case 'text/plain': {
-        const decoded = this.normalizePreviewText(this.decodeTextUtf8(file.buffer));
+        const decoded = this.normalizePreviewText(decodeUtf8Text(file.buffer));
         const previewText = decoded || '(empty text file)';
         return this.renderDocumentPreviewCard(
           safeFileName,
@@ -39,15 +43,6 @@ export class ExchangePreviewService {
 
       default:
         throw new HttpException('Unsupported file type', HttpStatus.UNSUPPORTED_MEDIA_TYPE);
-    }
-  }
-
-  private decodeTextUtf8(buffer: Buffer): string {
-    if (!buffer.length) return '';
-    try {
-      return new TextDecoder('utf-8', { fatal: true }).decode(buffer);
-    } catch {
-      return new TextDecoder('utf-8').decode(buffer);
     }
   }
 
@@ -281,7 +276,7 @@ export class ExchangePreviewService {
         }
       } catch (error) {
         this.logger.warn(
-          `pdf_screenshot_preview_failed file=${safeFileName} error=${this.errorMessage(error)}`,
+          `pdf_screenshot_preview_failed file=${safeFileName} error=${errorMessageFromUnknown(error)}`,
         );
       }
 
@@ -291,7 +286,7 @@ export class ExchangePreviewService {
           extractedText = textResult?.text ?? '';
         } catch (error) {
           this.logger.warn(
-            `pdf_text_preview_failed file=${safeFileName} error=${this.errorMessage(error)}`,
+            `pdf_text_preview_failed file=${safeFileName} error=${errorMessageFromUnknown(error)}`,
           );
         }
       }
@@ -312,13 +307,5 @@ export class ExchangePreviewService {
       'PDF document • first page snippet',
       fallbackText,
     );
-  }
-
-  private errorMessage(err: unknown): string {
-    if (typeof err === 'object' && err !== null && 'message' in err) {
-      const msg = (err as { message?: unknown }).message;
-      if (typeof msg === 'string') return msg;
-    }
-    return 'Unknown error';
   }
 }
