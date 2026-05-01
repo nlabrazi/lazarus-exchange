@@ -1,5 +1,5 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
-import { Request } from 'express';
+import type { Request } from 'express';
 
 export type RateLimitedRoute = 'auth_new' | 'upload' | 'invite_accept';
 

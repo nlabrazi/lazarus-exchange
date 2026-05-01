@@ -1,7 +1,7 @@
-import { Test, TestingModule } from '@nestjs/testing';
+import { Test, type TestingModule } from '@nestjs/testing';
+import { ApiRateLimitService } from '../security/api-rate-limit.service';
 import { ExchangeController } from './exchange.controller';
 import { ExchangeService } from './exchange.service';
-import { ApiRateLimitService } from '../security/api-rate-limit.service';
 
 type MockResponse = {
   statusCode: number;
@@ -13,20 +13,19 @@ type MockResponse = {
 };
 
 function createMockResponse(): MockResponse {
-  const response = {
-    statusCode: 200,
-    payload: null,
-    status: jest.fn((code: number) => {
-      response.statusCode = code;
-      return response;
-    }),
-    json: jest.fn((body: unknown) => {
-      response.payload = body;
-      return response;
-    }),
-    set: jest.fn(),
-    send: jest.fn(),
-  };
+  const response = {} as MockResponse;
+  response.statusCode = 200;
+  response.payload = null;
+  response.status = jest.fn((code: number) => {
+    response.statusCode = code;
+    return response;
+  });
+  response.json = jest.fn((body: unknown) => {
+    response.payload = body;
+    return response;
+  });
+  response.set = jest.fn();
+  response.send = jest.fn();
 
   return response;
 }
@@ -97,12 +96,12 @@ describe('ExchangeController', () => {
 
     const response = createMockResponse();
 
-    await controller.downloadByToken(
-      'Bearer test-token',
-      response as never,
-    );
+    await controller.downloadByToken('Bearer test-token', response as never);
 
-    expect(exchangeService.canDownload).toHaveBeenCalledWith('s_test', 'u_test');
+    expect(exchangeService.canDownload).toHaveBeenCalledWith(
+      's_test',
+      'u_test',
+    );
     expect(exchangeService.getPeerFileDownload).not.toHaveBeenCalled();
     expect(response.status).toHaveBeenCalledWith(403);
     expect(response.json).toHaveBeenCalledWith({

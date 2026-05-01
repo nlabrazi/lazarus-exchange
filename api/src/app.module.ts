@@ -18,4 +18,4 @@ import { RouteRateLimitGuard } from './security/route-rate-limit.guard';
     RouteRateLimitGuard,
   ],
 })
-export class AppModule { }
+export class AppModule {}

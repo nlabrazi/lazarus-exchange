@@ -1,19 +1,19 @@
+import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import {
   HttpException,
   HttpStatus,
   Injectable,
-  OnModuleDestroy,
+  type OnModuleDestroy,
 } from '@nestjs/common';
 import { createClient } from '@supabase/supabase-js';
-import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import { logApiInfo, logApiWarn } from '../utils/api-logger';
+import type { PreviewMeta } from './exchange-file.types';
 import { ExchangeFilePolicyService } from './exchange-file-policy.service';
 import { ExchangePreviewService } from './exchange-preview.service';
-import { PreviewMeta } from './exchange-file.types';
 import {
   errorMessageFromUnknown,
   readPositiveIntEnv,
 } from './exchange-shared.utils';
-import { logApiInfo, logApiWarn } from '../utils/api-logger';
 
 type StoredFileMeta = {
   fileId: string;
@@ -768,7 +768,7 @@ export class ExchangeService implements OnModuleDestroy {
   getStatus(sessionId: string, userId: string) {
     this.cleanupExpiredState();
     const session = this.sessions.get(sessionId);
-    if (!session || !session.users[userId]) return null;
+    if (!session?.users[userId]) return null;
 
     const me = session.users[userId];
     const peerId = this.getPeerId(sessionId, userId);
@@ -829,7 +829,7 @@ export class ExchangeService implements OnModuleDestroy {
     }
 
     const session = this.sessions.get(sessionId);
-    if (!session || !session.users[userId]) return null;
+    if (!session?.users[userId]) return null;
 
     const peerId = this.getPeerId(sessionId, userId);
     if (!peerId) return null;
@@ -884,7 +884,7 @@ export class ExchangeService implements OnModuleDestroy {
   canDownload(sessionId: string, userId: string): boolean {
     this.cleanupExpiredState();
     const session = this.sessions.get(sessionId);
-    if (!session || !session.users[userId]) return false;
+    if (!session?.users[userId]) return false;
 
     const peerId = this.getPeerId(sessionId, userId);
     if (!peerId) return false;
@@ -905,7 +905,7 @@ export class ExchangeService implements OnModuleDestroy {
   } | null> {
     this.cleanupExpiredState();
     const session = this.sessions.get(sessionId);
-    if (!session || !session.users[userId]) return null;
+    if (!session?.users[userId]) return null;
 
     const peerId = this.getPeerId(sessionId, userId);
     if (!peerId) return null;
@@ -945,7 +945,7 @@ export class ExchangeService implements OnModuleDestroy {
   async resetSession(sessionId: string, userId: string): Promise<boolean> {
     this.cleanupExpiredState();
     const session = this.sessions.get(sessionId);
-    if (!session || !session.users[userId]) return false;
+    if (!session?.users[userId]) return false;
 
     const paths: string[] = [];
     for (const userKey in session.users) {

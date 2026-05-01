@@ -27,16 +27,22 @@ export function createApiClient(baseUrl) {
       return fetch(endpoint('status'), withAuth(token, options));
     },
     upload(token, formData) {
-      return fetch(endpoint('upload'), withAuth(token, {
-        method: 'POST',
-        body: formData,
-      }));
+      return fetch(
+        endpoint('upload'),
+        withAuth(token, {
+          method: 'POST',
+          body: formData,
+        }),
+      );
     },
     preview(token) {
       return fetch(endpoint('preview'), withAuth(token));
     },
     previewUrl(token, fileId) {
-      return fetch(`${endpoint('files')}/${segment(fileId)}/preview-url`, withAuth(token));
+      return fetch(
+        `${endpoint('files')}/${segment(fileId)}/preview-url`,
+        withAuth(token),
+      );
     },
     validate(token) {
       return fetch(endpoint('validate'), withAuth(token, { method: 'POST' }));

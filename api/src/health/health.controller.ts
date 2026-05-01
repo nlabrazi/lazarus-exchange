@@ -1,4 +1,4 @@
-import { Controller, Get, Res, HttpStatus } from '@nestjs/common';
+import { Controller, Get, HttpStatus, Res } from '@nestjs/common';
 import type { Response } from 'express';
 
 @Controller('health')

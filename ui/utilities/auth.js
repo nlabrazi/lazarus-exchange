@@ -2,8 +2,8 @@ import { AUTH_TOKEN_STORAGE_KEY } from './config.js';
 import {
   clearAuthToken,
   clearInviteCode,
-  getAuthToken as getSessionAuthToken,
   getInviteCode,
+  getAuthToken as getSessionAuthToken,
   setAuthToken,
 } from './session.js';
 
@@ -151,8 +151,13 @@ export function createAuthManager({
       return res;
     } catch (error) {
       devLog(`${context} network error`, error);
-      showToast('Network error. Please check your connection and try again.', 'error');
-      logStatus('❌ Network error. Please check your connection and try again. █');
+      showToast(
+        'Network error. Please check your connection and try again.',
+        'error',
+      );
+      logStatus(
+        '❌ Network error. Please check your connection and try again. █',
+      );
       return null;
     }
   }

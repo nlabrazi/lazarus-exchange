@@ -1,8 +1,10 @@
+import { createApiClient } from './utilities/api.js';
+import { createAuthManager } from './utilities/auth.js';
 import {
   API_BASE,
+  apiOverride,
   LEADER_STORAGE_KEY,
   POLL_CONFIG,
-  apiOverride,
 } from './utilities/config.js';
 import {
   clearPreviewImage,
@@ -11,21 +13,19 @@ import {
   getShareLinkValue,
   logStatus,
   renderExchangeStatus,
+  setPreviewImage,
   setSessionIdDisplay,
   setShareLinkValue,
-  setPreviewImage,
   setUserDisplay,
   showToast,
 } from './utilities/dom.js';
-import { createApiClient } from './utilities/api.js';
+import { friendlyErrorFromApi } from './utilities/errors.js';
+import { createStatusPoller } from './utilities/poller.js';
 import {
   buildShareLink,
   getSessionState,
   initSessionFromUrl,
 } from './utilities/session.js';
-import { createStatusPoller } from './utilities/poller.js';
-import { friendlyErrorFromApi } from './utilities/errors.js';
-import { createAuthManager } from './utilities/auth.js';
 
 const DEBUG =
   location.hostname === 'localhost' ||
@@ -58,7 +58,11 @@ async function handleBadResponse(context, res) {
     json = JSON.parse(text);
   } catch {}
 
-  const { user, dev } = friendlyErrorFromApi({ status: res.status, text, json });
+  const { user, dev } = friendlyErrorFromApi({
+    status: res.status,
+    text,
+    json,
+  });
   devLog(`${context} failed`, dev);
 
   showToast(user, 'error');
@@ -136,8 +140,13 @@ async function upload() {
 
   const data = await res.json().catch(() => null);
   if (data?.maxFileMb) {
-    logStatus(`📤 File uploaded (max ${data.maxFileMb}MB). Waiting for peer... █`);
-    showToast(`Upload complete (max ${data.maxFileMb}MB). Waiting for peer.`, 'success');
+    logStatus(
+      `📤 File uploaded (max ${data.maxFileMb}MB). Waiting for peer... █`,
+    );
+    showToast(
+      `Upload complete (max ${data.maxFileMb}MB). Waiting for peer.`,
+      'success',
+    );
   } else {
     logStatus('📤 File uploaded. Waiting for peer... █');
     showToast('File uploaded. Waiting for peer.', 'success');
@@ -154,7 +163,7 @@ async function preview() {
 
   const data = await res.json().catch(() => null);
 
-  if (!data || !data.fileId) {
+  if (!data?.fileId) {
     clearPreviewImage('No preview loaded yet.');
     logStatus('⏳ No file from peer yet... █');
     showToast('No file from peer yet.', 'error');
@@ -168,8 +177,9 @@ async function preview() {
     return;
   }
 
-  const previewUrlRes = await authManager.runAuthedRequest('Preview URL', (token) =>
-    apiClient.previewUrl(token, data.fileId),
+  const previewUrlRes = await authManager.runAuthedRequest(
+    'Preview URL',
+    (token) => apiClient.previewUrl(token, data.fileId),
   );
   if (!previewUrlRes) return;
 
@@ -183,7 +193,9 @@ async function preview() {
 
   const caption = `${data.originalname} • ${formatBytes(data.size)} • ${data.mimetype}`;
   setPreviewImage(previewPayload.previewUrl, caption);
-  logStatus(`👀 Secure preview loaded:\n${data.originalname} (${formatBytes(data.size)}) █`);
+  logStatus(
+    `👀 Secure preview loaded:\n${data.originalname} (${formatBytes(data.size)}) █`,
+  );
   showToast(`Preview ready: ${data.originalname}`, 'success');
 }
 
@@ -205,7 +217,7 @@ async function download() {
   if (!res) return;
 
   const disposition = res.headers.get('Content-Disposition') || '';
-  const match = /filename=\"([^\"]+)\"/i.exec(disposition);
+  const match = /filename="([^"]+)"/i.exec(disposition);
   const filename = match?.[1] || 'exchange_file';
 
   const blob = await res.blob();

@@ -99,8 +99,13 @@ export function createStatusPoller({
 
       const status = await res.json().catch(() => null);
 
-      if (!status || !status.me) {
-        setPollDelay(Math.min(config.maxDelayMs, currentBaseDelay() + config.idleIncrementMs));
+      if (!status?.me) {
+        setPollDelay(
+          Math.min(
+            config.maxDelayMs,
+            currentBaseDelay() + config.idleIncrementMs,
+          ),
+        );
         schedule(currentBaseDelay());
         return;
       }
@@ -116,7 +121,12 @@ export function createStatusPoller({
       if (changed) {
         setPollDelay(config.minDelayMs);
       } else {
-        setPollDelay(Math.min(config.maxDelayMs, currentBaseDelay() + config.idleIncrementMs));
+        setPollDelay(
+          Math.min(
+            config.maxDelayMs,
+            currentBaseDelay() + config.idleIncrementMs,
+          ),
+        );
       }
 
       schedule(currentBaseDelay());

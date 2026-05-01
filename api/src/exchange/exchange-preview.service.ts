@@ -1,12 +1,12 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
-import sharp from 'sharp';
 import { PDFParse } from 'pdf-parse';
-import { GeneratedPreview, ValidatedMime } from './exchange-file.types';
+import sharp from 'sharp';
+import { logApiWarn } from '../utils/api-logger';
+import type { GeneratedPreview, ValidatedMime } from './exchange-file.types';
 import {
   decodeUtf8Text,
   errorMessageFromUnknown,
 } from './exchange-shared.utils';
-import { logApiWarn } from '../utils/api-logger';
 
 const PREVIEW_WEBP_QUALITY = 58;
 const TEXT_PREVIEW_WIDTH = 1200;

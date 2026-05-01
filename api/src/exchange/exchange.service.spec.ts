@@ -4,9 +4,9 @@ jest.mock('@supabase/supabase-js', () => ({
 
 import { HttpException, HttpStatus } from '@nestjs/common';
 import { createClient } from '@supabase/supabase-js';
-import { ExchangeFilePolicyService } from './exchange-file-policy.service';
-import { ExchangePreviewService } from './exchange-preview.service';
 import { ExchangeService } from './exchange.service';
+import type { ExchangeFilePolicyService } from './exchange-file-policy.service';
+import type { ExchangePreviewService } from './exchange-preview.service';
 
 type MockStorageBucket = {
   upload: jest.Mock;
@@ -34,7 +34,7 @@ function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
   return bytes.buffer.slice(
     bytes.byteOffset,
     bytes.byteOffset + bytes.byteLength,
-  ) as ArrayBuffer;
+  );
 }
 
 describe('ExchangeService', () => {
@@ -43,7 +43,10 @@ describe('ExchangeService', () => {
   let service: ExchangeService;
   let storageBucket: MockStorageBucket;
   let filePolicy: jest.Mocked<
-    Pick<ExchangeFilePolicyService, 'detectValidatedMime' | 'normalizedFileName'>
+    Pick<
+      ExchangeFilePolicyService,
+      'detectValidatedMime' | 'normalizedFileName'
+    >
   >;
   let previewService: jest.Mocked<
     Pick<ExchangePreviewService, 'generatePreview'>
@@ -59,12 +62,14 @@ describe('ExchangeService', () => {
     storageBucket = {
       upload: jest.fn().mockResolvedValue({ error: null }),
       remove: jest.fn().mockResolvedValue({ error: null }),
-      createSignedUrl: jest
-        .fn()
-        .mockImplementation(async (path: string) => ({
-          data: { signedUrl: `https://signed.example/${encodeURIComponent(path)}` },
+      createSignedUrl: jest.fn().mockImplementation((path: string) =>
+        Promise.resolve({
+          data: {
+            signedUrl: `https://signed.example/${encodeURIComponent(path)}`,
+          },
           error: null,
-        })),
+        }),
+      ),
     };
 
     mockedCreateClient.mockReturnValue({
@@ -218,10 +223,16 @@ describe('ExchangeService', () => {
       peerUpload.fileId,
     );
 
-    expect(previewUrl).toEqual({
+    expect(previewUrl).not.toBeNull();
+    if (!previewUrl) fail('previewUrl should not be null');
+    expect(previewUrl.previewUrl).toContain('/previews%2F');
+    expect({
+      ...previewUrl,
+      previewUrl: 'signed-url',
+    }).toEqual({
       fileId: peerUpload.fileId,
       previewStatus: 'ready',
-      previewUrl: expect.stringContaining('/previews%2F'),
+      previewUrl: 'signed-url',
       expiresIn: 180,
       previewMeta: {
         format: 'webp',
@@ -232,11 +243,13 @@ describe('ExchangeService', () => {
       },
     });
 
-    const downloadedPeerBytes = Uint8Array.from(Buffer.from('peer-secret-file'));
+    const downloadedPeerBytes = Uint8Array.from(
+      Buffer.from('peer-secret-file'),
+    );
     fetchMock.mockResolvedValue({
       ok: true,
       status: 200,
-      arrayBuffer: async () => toArrayBuffer(downloadedPeerBytes),
+      arrayBuffer: () => Promise.resolve(toArrayBuffer(downloadedPeerBytes)),
     } as Response);
 
     expect(service.canDownload(owner.sessionId, owner.userId)).toBe(false);
