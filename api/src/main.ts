@@ -1,6 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import 'dotenv/config';
+import { ApiExceptionFilter } from './utils/api-exception.filter';
 
 type TrustProxyConfigurable = {
   set: (key: string, value: unknown) => unknown;
@@ -53,6 +54,7 @@ function resolvePort(): number {
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  app.useGlobalFilters(new ApiExceptionFilter());
   const trustProxyValue = (process.env.TRUST_PROXY ?? '').trim().toLowerCase();
   if (
     trustProxyValue === '1' ||

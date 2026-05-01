@@ -2,7 +2,6 @@ import {
   HttpException,
   HttpStatus,
   Injectable,
-  Logger,
   OnModuleDestroy,
 } from '@nestjs/common';
 import { createClient } from '@supabase/supabase-js';
@@ -14,6 +13,7 @@ import {
   errorMessageFromUnknown,
   readPositiveIntEnv,
 } from './exchange-shared.utils';
+import { logApiInfo, logApiWarn } from '../utils/api-logger';
 
 type StoredFileMeta = {
   fileId: string;
@@ -79,7 +79,6 @@ const INVITE_ALPHABET =
 
 @Injectable()
 export class ExchangeService implements OnModuleDestroy {
-  private readonly logger = new Logger(ExchangeService.name);
   private readonly sessions = new Map<string, SessionData>();
   private readonly dailyUsage = new Map<string, DailyUsage>();
   private readonly supabase: ReturnType<typeof createClient>;
@@ -218,7 +217,12 @@ export class ExchangeService implements OnModuleDestroy {
   private bumpSessionEpoch(sessionId: string): number {
     const next = this.currentSessionEpoch(sessionId) + 1;
     this.sessionEpoch.set(sessionId, next);
-    this.logger.log(`token_epoch_bumped session=${sessionId} epoch=${next}`);
+    logApiInfo({
+      route: 'internal',
+      message: 'token_epoch_bumped',
+      context: ExchangeService.name,
+      extra: { sessionId, epoch: next },
+    });
     return next;
   }
 
@@ -272,9 +276,12 @@ export class ExchangeService implements OnModuleDestroy {
     this.invites.set(inviteCode, { sessionId, creatorUserId, expiresAt });
     this.inviteBySession.set(sessionId, inviteCode);
 
-    this.logger.log(
-      `invite_created session=${sessionId} creator=${creatorUserId} code=${inviteCode}`,
-    );
+    logApiInfo({
+      route: 'internal',
+      message: 'invite_created',
+      context: ExchangeService.name,
+      extra: { sessionId, creatorUserId },
+    });
 
     return { inviteCode, expiresAt };
   }
@@ -283,7 +290,12 @@ export class ExchangeService implements OnModuleDestroy {
     const inviteCode = this.inviteBySession.get(sessionId);
     if (!inviteCode) return;
     this.removeInvite(inviteCode);
-    this.logger.log(`invite_revoked session=${sessionId} code=${inviteCode}`);
+    logApiInfo({
+      route: 'internal',
+      message: 'invite_revoked',
+      context: ExchangeService.name,
+      extra: { sessionId },
+    });
   }
 
   private removeInvite(inviteCode: string): void {
@@ -300,9 +312,15 @@ export class ExchangeService implements OnModuleDestroy {
     for (const [inviteCode, invite] of this.invites.entries()) {
       if (nowMs < invite.expiresAt) continue;
       this.removeInvite(inviteCode);
-      this.logger.log(
-        `invite_expired session=${invite.sessionId} creator=${invite.creatorUserId} code=${inviteCode}`,
-      );
+      logApiInfo({
+        route: 'internal',
+        message: 'invite_expired',
+        context: ExchangeService.name,
+        extra: {
+          sessionId: invite.sessionId,
+          creatorUserId: invite.creatorUserId,
+        },
+      });
     }
   }
 
@@ -315,13 +333,20 @@ export class ExchangeService implements OnModuleDestroy {
       if (nowMs < session.expiresAt) continue;
 
       for (const userId in session.users) {
-        expiredPaths.push(...this.storagePathsForFile(session.users[userId]?.file));
+        expiredPaths.push(
+          ...this.storagePathsForFile(session.users[userId]?.file),
+        );
       }
 
       this.sessions.delete(sessionId);
       this.sessionEpoch.delete(sessionId);
       this.revokeSessionInvite(sessionId);
-      this.logger.log(`session_expired session=${sessionId}`);
+      logApiInfo({
+        route: 'internal',
+        message: 'session_expired',
+        context: ExchangeService.name,
+        extra: { sessionId },
+      });
     }
 
     if (expiredPaths.length > 0) {
@@ -345,9 +370,12 @@ export class ExchangeService implements OnModuleDestroy {
       exp,
     );
 
-    this.logger.log(
-      `token_issued session=${sessionId} user=${userId} epoch=${epoch} reason=${reason}`,
-    );
+    logApiInfo({
+      route: 'internal',
+      message: 'token_issued',
+      context: ExchangeService.name,
+      extra: { sessionId, userId, epoch, reason },
+    });
 
     return { sessionId, userId, token, expiresAt: exp * 1000 };
   }
@@ -505,11 +533,22 @@ export class ExchangeService implements OnModuleDestroy {
 
     session.users[userId] = session.users[userId] ?? {};
     this.removeInvite(inviteCode);
-    this.logger.log(
-      `invite_accepted session=${invite.sessionId} creator=${invite.creatorUserId} user=${userId}`,
-    );
+    logApiInfo({
+      route: 'internal',
+      message: 'invite_accepted',
+      context: ExchangeService.name,
+      extra: {
+        sessionId: invite.sessionId,
+        creatorUserId: invite.creatorUserId,
+        userId,
+      },
+    });
 
-    const issued = this.issueSessionToken(invite.sessionId, userId, 'invite_accept');
+    const issued = this.issueSessionToken(
+      invite.sessionId,
+      userId,
+      'invite_accept',
+    );
     this.getOrCreateSession(invite.sessionId, issued.expiresAt);
     return issued;
   }
@@ -632,9 +671,12 @@ export class ExchangeService implements OnModuleDestroy {
 
     const { error } = await this.supabase.storage.from(BUCKET).remove(unique);
     if (error) {
-      this.logger.warn(
-        `supabase_remove_failed paths=${unique.length} error=${errorMessageFromUnknown(error)}`,
-      );
+      logApiWarn({
+        route: 'internal',
+        message: 'supabase_remove_failed',
+        context: ExchangeService.name,
+        extra: { paths: unique.length, error: errorMessageFromUnknown(error) },
+      });
     }
   }
 
@@ -918,7 +960,12 @@ export class ExchangeService implements OnModuleDestroy {
     this.revokeSessionInvite(sessionId);
     this.bumpSessionEpoch(sessionId);
     this.sessions.delete(sessionId);
-    this.logger.log(`session_reset session=${sessionId} actor=${userId}`);
+    logApiInfo({
+      route: 'internal',
+      message: 'session_reset',
+      context: ExchangeService.name,
+      extra: { sessionId, actorUserId: userId },
+    });
     return true;
   }
 }
