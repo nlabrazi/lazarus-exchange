@@ -1,7 +1,8 @@
-import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
-import sharp = require('sharp');
+import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { PDFParse } from 'pdf-parse';
-import { GeneratedPreview, ValidatedMime } from './exchange-file.types';
+import sharp from 'sharp';
+import { logApiWarn } from '../utils/api-logger';
+import type { GeneratedPreview, ValidatedMime } from './exchange-file.types';
 import {
   decodeUtf8Text,
   errorMessageFromUnknown,
@@ -15,8 +16,6 @@ const TEXT_PREVIEW_MAX_LINES = 9;
 
 @Injectable()
 export class ExchangePreviewService {
-  private readonly logger = new Logger(ExchangePreviewService.name);
-
   async generatePreview(
     file: Express.Multer.File,
     validatedMime: ValidatedMime,
@@ -42,7 +41,10 @@ export class ExchangePreviewService {
       }
 
       default:
-        throw new HttpException('Unsupported file type', HttpStatus.UNSUPPORTED_MEDIA_TYPE);
+        throw new HttpException(
+          'Unsupported file type',
+          HttpStatus.UNSUPPORTED_MEDIA_TYPE,
+        );
     }
   }
 
@@ -62,7 +64,10 @@ export class ExchangePreviewService {
   }
 
   private obfuscatePreviewText(source: string): string {
-    const normalized = this.normalizePreviewText(source, TEXT_PREVIEW_MAX_CHARS);
+    const normalized = this.normalizePreviewText(
+      source,
+      TEXT_PREVIEW_MAX_CHARS,
+    );
     if (!normalized) return '';
 
     let exposedChars = 0;
@@ -87,7 +92,7 @@ export class ExchangePreviewService {
         continue;
       }
 
-      if (/[,.;:!?()[\]{}'"\/\\-]/.test(char)) {
+      if (/[,.;:!?()[\]{}'"/\\-]/.test(char)) {
         out += char;
         continue;
       }
@@ -131,7 +136,8 @@ export class ExchangePreviewService {
       }
 
       if (current) lines.push(current);
-      current = word.length > maxLineLength ? word.slice(0, maxLineLength) : word;
+      current =
+        word.length > maxLineLength ? word.slice(0, maxLineLength) : word;
       if (lines.length >= maxLines) break;
     }
 
@@ -225,7 +231,10 @@ export class ExchangePreviewService {
     const sourceMeta = await sourceSharp.metadata();
 
     if (!sourceMeta.width || !sourceMeta.height) {
-      throw new HttpException('Unable to render preview image', HttpStatus.BAD_REQUEST);
+      throw new HttpException(
+        'Unable to render preview image',
+        HttpStatus.BAD_REQUEST,
+      );
     }
 
     const cropRatio = sourceKind === 'image' ? 0.72 : 0.9;
@@ -237,7 +246,12 @@ export class ExchangePreviewService {
 
     const { data, info } = await sharp(source)
       .extract({ left, top, width: cropWidth, height: cropHeight })
-      .resize({ width: 960, height: 640, fit: 'inside', withoutEnlargement: true })
+      .resize({
+        width: 960,
+        height: 640,
+        fit: 'inside',
+        withoutEnlargement: true,
+      })
       .blur(blurStrength)
       .webp({ quality: PREVIEW_WEBP_QUALITY })
       .toBuffer({ resolveWithObject: true });
@@ -275,9 +289,12 @@ export class ExchangePreviewService {
           screenshotBuffer = Buffer.from(firstPage.data);
         }
       } catch (error) {
-        this.logger.warn(
-          `pdf_screenshot_preview_failed file=${safeFileName} error=${errorMessageFromUnknown(error)}`,
-        );
+        logApiWarn({
+          route: 'internal',
+          message: 'pdf_screenshot_preview_failed',
+          context: ExchangePreviewService.name,
+          extra: { error: errorMessageFromUnknown(error) },
+        });
       }
 
       if (!screenshotBuffer) {
@@ -285,9 +302,12 @@ export class ExchangePreviewService {
           const textResult = await parser.getText({ partial: [1] });
           extractedText = textResult?.text ?? '';
         } catch (error) {
-          this.logger.warn(
-            `pdf_text_preview_failed file=${safeFileName} error=${errorMessageFromUnknown(error)}`,
-          );
+          logApiWarn({
+            route: 'internal',
+            message: 'pdf_text_preview_failed',
+            context: ExchangePreviewService.name,
+            extra: { error: errorMessageFromUnknown(error) },
+          });
         }
       }
     } finally {

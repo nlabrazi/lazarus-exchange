@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from '@jest/globals';
-import { Test, TestingModule } from '@nestjs/testing';
 import { HttpStatus } from '@nestjs/common';
+import { Test, type TestingModule } from '@nestjs/testing';
 import { AppModule } from './../src/app.module';
 import { ExchangeController } from './../src/exchange/exchange.controller';
 import { HealthController } from './../src/health/health.controller';

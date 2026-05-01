@@ -1,5 +1,5 @@
 import { SetMetadata } from '@nestjs/common';
-import { RateLimitedRoute } from './api-rate-limit.service';
+import type { RateLimitedRoute } from './api-rate-limit.service';
 
 export const RATE_LIMIT_ROUTE_KEY = 'rate_limit_route';
 

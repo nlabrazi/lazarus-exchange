@@ -2,11 +2,16 @@
   "name": "lazarus-exchange",
   "private": true,
   "scripts": {
+    "check": "biome check .",
+    "check:write": "biome check --write .",
     "dev": "concurrently \"npm run dev:api\" \"npm run dev:ui\"",
     "dev:api": "cd api && npm run start:dev",
-    "dev:ui": "serve -s ui -l 5173"
+    "dev:ui": "serve -s ui -l 5173",
+    "format": "biome format --write .",
+    "lint": "biome lint ."
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.4.14",
     "concurrently": "^8.2.2",
     "serve": "^14.2.6"
   }

@@ -145,7 +145,5 @@ export function renderExchangeStatus(status) {
       entry.previewReady ? '👀 Preview ready' : '🛠️ Preview pending'
     } • ${validationState(entry)}`;
 
-  logStatus(
-    `🧑 You: ${describe(my)}\n👤 Peer: ${describe(peer)} █`,
-  );
+  logStatus(`🧑 You: ${describe(my)}\n👤 Peer: ${describe(peer)} █`);
 }

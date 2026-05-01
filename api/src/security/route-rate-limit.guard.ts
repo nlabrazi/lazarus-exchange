@@ -1,10 +1,12 @@
-import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
-import { Reflector } from '@nestjs/core';
-import { Request } from 'express';
 import {
-  ApiRateLimitService,
-  RateLimitedRoute,
-} from './api-rate-limit.service';
+  type CanActivate,
+  type ExecutionContext,
+  Injectable,
+} from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
+import type { Request } from 'express';
+import type { RateLimitedRoute } from './api-rate-limit.service';
+import { ApiRateLimitService } from './api-rate-limit.service';
 import { RATE_LIMIT_ROUTE_KEY } from './rate-limit-route.decorator';
 
 type RateLimitedRequest = Request & { rateLimitIp?: string };

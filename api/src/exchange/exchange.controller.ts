@@ -1,23 +1,23 @@
 import {
   Controller,
-  Post,
   Get,
-  Param,
   Headers,
-  Req,
-  UploadedFile,
-  UseInterceptors,
-  UseGuards,
-  Res,
   HttpException,
   HttpStatus,
+  Param,
+  Post,
+  Req,
+  Res,
+  UploadedFile,
+  UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { ExchangeService } from './exchange.service';
-import { Request, Response } from 'express';
+import type { Request, Response } from 'express';
 import { ApiRateLimitService } from '../security/api-rate-limit.service';
 import { RateLimitRoute } from '../security/rate-limit-route.decorator';
 import { RouteRateLimitGuard } from '../security/route-rate-limit.guard';
+import { ExchangeService } from './exchange.service';
 import { readPositiveIntEnv } from './exchange-shared.utils';
 
 const MAX_FILE_MB = readPositiveIntEnv('MAX_FILE_MB', 10);
@@ -34,7 +34,7 @@ export class ExchangeController {
   ) {}
 
   private tokenFromAuthHeader(authHeader?: string): string {
-    if (!authHeader || !authHeader.toLowerCase().startsWith('bearer ')) {
+    if (!authHeader?.toLowerCase().startsWith('bearer ')) {
       throw new HttpException('Missing Bearer token', HttpStatus.UNAUTHORIZED);
     }
 

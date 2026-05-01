@@ -1,9 +1,9 @@
 /* Entry point for UI styles. Keep this file small and ordered by concern. */
-@import './styles/00-theme.css';
-@import './styles/01-shell-header.css';
-@import './styles/02-layout-panels.css';
-@import './styles/03-forms-buttons.css';
-@import './styles/04-preview-console.css';
-@import './styles/05-footer-toast.css';
-@import './styles/06-animations.css';
-@import './styles/07-responsive.css';
+@import "./styles/00-theme.css";
+@import "./styles/01-shell-header.css";
+@import "./styles/02-layout-panels.css";
+@import "./styles/03-forms-buttons.css";
+@import "./styles/04-preview-console.css";
+@import "./styles/05-footer-toast.css";
+@import "./styles/06-animations.css";
+@import "./styles/07-responsive.css";

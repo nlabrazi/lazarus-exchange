@@ -26,7 +26,8 @@ function decodeJwtPayload(token) {
 
     if (!parsed || parsed.v !== 1) return null;
     if (!isSessionId(parsed.s) || !isUserId(parsed.u)) return null;
-    if (typeof parsed.exp !== 'number' || typeof parsed.iat !== 'number') return null;
+    if (typeof parsed.exp !== 'number' || typeof parsed.iat !== 'number')
+      return null;
 
     const nowSec = Math.floor(Date.now() / 1000);
     if (nowSec >= parsed.exp) return null;
