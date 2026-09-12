@@ -50,9 +50,12 @@ export class ExchangeController {
     return token;
   }
 
-  private identityFromAuthHeader(authHeader?: string) {
+  private identityFromAuthHeader(
+    authHeader?: string,
+    options?: { allowRevokedEpoch?: boolean },
+  ) {
     const token = this.tokenFromAuthHeader(authHeader);
-    return this.exchangeService.parseSessionToken(token);
+    return this.exchangeService.parseSessionToken(token, options);
   }
 
   @Post('auth/new')
@@ -168,9 +171,10 @@ export class ExchangeController {
     const { sessionId, userId } = this.identityFromAuthHeader(authHeader);
 
     if (!this.exchangeService.canDownload(sessionId, userId)) {
-      return res
-        .status(403)
-        .json({ error: 'Both parties must validate first' });
+      return res.status(403).json({
+        error: 'Both parties must validate first',
+        message: 'Both parties must validate first',
+      });
     }
 
     const download = await this.exchangeService.getPeerFileDownload(
@@ -194,7 +198,9 @@ export class ExchangeController {
 
   @Post('reset')
   async resetByToken(@Headers('authorization') authHeader?: string) {
-    const { sessionId, userId } = this.identityFromAuthHeader(authHeader);
+    const { sessionId, userId } = this.identityFromAuthHeader(authHeader, {
+      allowRevokedEpoch: true,
+    });
     const ok = await this.exchangeService.resetSession(sessionId, userId);
     return ok ? { success: true } : { success: false };
   }

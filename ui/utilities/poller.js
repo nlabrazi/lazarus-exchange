@@ -2,7 +2,7 @@ export function createStatusPoller({
   apiClient,
   getAuthToken,
   onStatus,
-  onError,
+  onReset,
   config,
   leaderStorageKey,
 }) {
@@ -76,6 +76,9 @@ export function createStatusPoller({
 
       eventSource.addEventListener('reset', () => {
         resetState();
+        if (typeof onReset === 'function') {
+          onReset();
+        }
       });
 
       eventSource.onerror = () => {
@@ -140,11 +143,12 @@ export function createStatusPoller({
       const res = await apiClient.status(authToken, { cache: 'no-store' });
 
       if (!res.ok) {
+        if (res.status === 401 && typeof onReset === 'function') {
+          onReset();
+          return;
+        }
         const backoff = Math.min(config.maxDelayMs, currentBaseDelay() * 2);
         setPollDelay(backoff);
-        onError(
-          `❌ Polling error: ${res.status} (backoff ${Math.round(backoff / 1000)}s) █`,
-        );
         schedule(backoff);
         return;
       }
@@ -164,14 +168,9 @@ export function createStatusPoller({
 
       handleStatusPayload(status);
       schedule(currentBaseDelay());
-    } catch (error) {
+    } catch {
       const backoff = Math.min(config.maxDelayMs, currentBaseDelay() * 2);
       setPollDelay(backoff);
-      onError(
-        `❌ Polling error: ${error?.message || String(error)} (backoff ${Math.round(
-          backoff / 1000,
-        )}s) █`,
-      );
       schedule(backoff);
     }
   }

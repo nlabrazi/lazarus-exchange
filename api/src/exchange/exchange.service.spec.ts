@@ -289,5 +289,16 @@ describe('ExchangeService', () => {
     // Now both downloaded: reset is allowed!
     const resetOk = await service.resetSession(owner.sessionId, owner.userId);
     expect(resetOk).toBe(true);
+
+    // Peer also tries to reset right after: should succeed (session already reset)
+    const peerResetOk = await service.resetSession(peer.sessionId, peer.userId);
+    expect(peerResetOk).toBe(true);
+
+    // Parsing peer's token with allowRevokedEpoch succeeds even though epoch was bumped
+    const parsed = service.parseSessionToken(peer.token, {
+      allowRevokedEpoch: true,
+    });
+    expect(parsed.sessionId).toBe(peer.sessionId);
+    expect(parsed.userId).toBe(peer.userId);
   });
 });

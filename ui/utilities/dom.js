@@ -8,22 +8,16 @@ const elements = {
   previewImage: document.getElementById('previewImage'),
   previewCaption: document.getElementById('previewCaption'),
   toast: document.getElementById('toast'),
-  dropzone: document.getElementById('dropzone'),
-  dropzoneText: document.getElementById('dropzoneText'),
-  uploadProgress: document.getElementById('uploadProgress'),
-  uploadProgressBar: document.getElementById('uploadProgressBar'),
-  uploadProgressText: document.getElementById('uploadProgressText'),
-  stepper: document.getElementById('stepper'),
-  mySha256: document.getElementById('mySha256'),
-  peerSha256: document.getElementById('peerSha256'),
-  countdownBanner: document.getElementById('countdownBanner'),
-  countdownText: document.getElementById('countdownText'),
 };
 
 let toastTimer = null;
 let statusTypingTimer = null;
 let statusTypingVersion = 0;
-let countdownTimer = null;
+let lastLoggedNormalized = null;
+
+export function clearStatusCache() {
+  lastLoggedNormalized = null;
+}
 
 function requiredElement(id) {
   const element = elements[id];
@@ -31,13 +25,6 @@ function requiredElement(id) {
     throw new Error(`Missing required element #${id}`);
   }
   return element;
-}
-
-function formatBytes(bytes) {
-  if (!Number.isFinite(bytes) || bytes < 0) return '';
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 }
 
 function createBlinkingCursor() {
@@ -75,174 +62,6 @@ export function getSelectedFile() {
 
 export function clearSelectedFile() {
   requiredElement('fileInput').value = '';
-  setDropzoneFileName(null);
-}
-
-export function setDropzoneFileName(name, size) {
-  const text = elements.dropzoneText;
-  if (!text) return;
-  if (!name) {
-    text.innerHTML = 'Drop file here or <u>browse</u>';
-    return;
-  }
-  const sizeStr = typeof size === 'number' ? ` (${formatBytes(size)})` : '';
-  text.innerHTML = `<strong>${name}</strong>${sizeStr}`;
-}
-
-export function initDropzone(onFileSelected) {
-  const dropzone = elements.dropzone;
-  const fileInput = elements.fileInput;
-  if (!dropzone || !fileInput) return;
-
-  dropzone.addEventListener('click', () => fileInput.click());
-  dropzone.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      fileInput.click();
-    }
-  });
-
-  ['dragenter', 'dragover'].forEach((eventName) => {
-    dropzone.addEventListener(eventName, (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      dropzone.classList.add('dragover');
-    });
-  });
-
-  ['dragleave', 'drop'].forEach((eventName) => {
-    dropzone.addEventListener(eventName, (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      dropzone.classList.remove('dragover');
-    });
-  });
-
-  dropzone.addEventListener('drop', (e) => {
-    const files = e.dataTransfer?.files;
-    if (files && files.length > 0) {
-      fileInput.files = files;
-      setDropzoneFileName(files[0].name, files[0].size);
-      if (typeof onFileSelected === 'function') {
-        onFileSelected(files[0]);
-      }
-    }
-  });
-
-  fileInput.addEventListener('change', () => {
-    const file = fileInput.files?.[0];
-    if (file) {
-      setDropzoneFileName(file.name, file.size);
-      if (typeof onFileSelected === 'function') {
-        onFileSelected(file);
-      }
-    } else {
-      setDropzoneFileName(null);
-    }
-  });
-}
-
-export function setUploadProgress(percent) {
-  const container = elements.uploadProgress;
-  const bar = elements.uploadProgressBar;
-  const text = elements.uploadProgressText;
-  if (!container || !bar || !text) return;
-
-  if (percent === null || percent === undefined) {
-    container.hidden = true;
-    bar.style.width = '0%';
-    text.textContent = '0%';
-    return;
-  }
-
-  container.hidden = false;
-  const bounded = Math.min(100, Math.max(0, percent));
-  bar.style.width = `${bounded}%`;
-  text.textContent = `${bounded}%`;
-}
-
-export function updateStepper(_state, status = {}) {
-  const stepper = elements.stepper;
-  if (!stepper) return;
-
-  let currentStep = 1;
-  const my = status.me || {};
-  const peer = status.peer;
-
-  if (!peer) {
-    currentStep = 1;
-  } else if (!my.uploaded || !peer.uploaded) {
-    currentStep = 2;
-  } else if (!my.validated || !peer.validated) {
-    currentStep = peer.previewReady ? 4 : 3;
-  } else {
-    currentStep = 5;
-  }
-
-  const steps = stepper.querySelectorAll('.step');
-  steps.forEach((stepEl) => {
-    const stepNum = Number(stepEl.dataset.step);
-    if (stepNum < currentStep) {
-      stepEl.classList.remove('is-active');
-      stepEl.classList.add('is-completed');
-    } else if (stepNum === currentStep) {
-      stepEl.classList.remove('is-completed');
-      stepEl.classList.add('is-active');
-    } else {
-      stepEl.classList.remove('is-active', 'is-completed');
-    }
-  });
-}
-
-export function updateSha256(myHash, peerHash) {
-  const myEl = elements.mySha256;
-  const peerEl = elements.peerSha256;
-  if (myEl) {
-    myEl.textContent = myHash || '-';
-    myEl.title = myHash || '';
-  }
-  if (peerEl) {
-    peerEl.textContent = peerHash || '-';
-    peerEl.title = peerHash || '';
-  }
-}
-
-export function updateCountdown(expiresAt) {
-  const banner = elements.countdownBanner;
-  const text = elements.countdownText;
-  if (!banner || !text) return;
-
-  if (countdownTimer) {
-    clearInterval(countdownTimer);
-    countdownTimer = null;
-  }
-
-  if (!expiresAt) {
-    banner.hidden = true;
-    return;
-  }
-
-  const targetTime = new Date(expiresAt).getTime();
-
-  const tick = () => {
-    const diff = targetTime - Date.now();
-    if (diff <= 0) {
-      banner.hidden = false;
-      text.textContent = 'Grace period ended - session may be reset';
-      if (countdownTimer) {
-        clearInterval(countdownTimer);
-        countdownTimer = null;
-      }
-      return;
-    }
-    banner.hidden = false;
-    const mins = Math.floor(diff / 60000);
-    const secs = Math.floor((diff % 60000) / 1000);
-    text.textContent = `Auto-destruct locked for: ${mins}:${secs.toString().padStart(2, '0')}`;
-  };
-
-  tick();
-  countdownTimer = setInterval(tick, 1000);
 }
 
 export function setPreviewImage(url, caption = '') {
@@ -263,11 +82,14 @@ export function clearPreviewImage(caption = 'No preview loaded yet.') {
   previewCaption.textContent = caption;
 }
 
-export function logStatus(message) {
+export function logStatus(message, options = {}) {
   const statusBox = requiredElement('statusBox');
   const normalized = statusMessageWithoutCursor(message);
-  statusTypingVersion += 1;
-  const version = statusTypingVersion;
+
+  if (normalized === lastLoggedNormalized) {
+    return;
+  }
+  lastLoggedNormalized = normalized;
 
   if (statusTypingTimer) {
     clearTimeout(statusTypingTimer);
@@ -286,20 +108,20 @@ export function logStatus(message) {
     return;
   }
 
-  // Keep the retro typing effect short so frequent poll updates stay responsive.
-  const shouldType = normalized.length <= 180;
-  if (!shouldType) {
+  if (!options.animate) {
     draw(normalized);
     return;
   }
 
+  statusTypingVersion += 1;
+  const version = statusTypingVersion;
   let index = 0;
   const step = () => {
     if (version !== statusTypingVersion) return;
-    index = Math.min(normalized.length, index + 2);
+    index = Math.min(normalized.length, index + 3);
     draw(normalized.slice(0, index));
     if (index < normalized.length) {
-      statusTypingTimer = setTimeout(step, 14);
+      statusTypingTimer = setTimeout(step, 10);
     }
   };
 
@@ -320,22 +142,76 @@ export function showToast(message, variant = 'success') {
 
 export function renderExchangeStatus(status) {
   if (!status) return;
-  const my = status.me || { uploaded: false, validated: false };
-  const peer = status.peer || { uploaded: false, validated: false };
-
-  updateStepper(status.state, status);
-  updateSha256(my.sha256, peer.sha256);
-  updateCountdown(status.gracePeriodExpiresAt);
-
-  const validationState = (entry) => {
-    if (!entry.uploaded) return '✍️ Upload required';
-    return entry.validated ? '✅ Validated' : '⏳ Waiting validation';
+  const my = status.me || {
+    uploaded: false,
+    validated: false,
+    downloaded: false,
   };
+  const peer = status.peer || null;
 
-  const describe = (entry) =>
-    `${entry.uploaded ? '📤 Uploaded' : '📭 No upload'} • ${
-      entry.previewReady ? '👀 Preview ready' : '🛠️ Preview pending'
-    } • ${validationState(entry)}`;
+  let guidance = '';
+  let myLabel = '✍️ No file';
+  let peerLabel = 'Waiting to connect';
 
-  logStatus(`🧑 You: ${describe(my)}\n👤 Peer: ${describe(peer)} █`);
+  if (!peer) {
+    myLabel = my.uploaded ? '📤 Uploaded' : 'Ready';
+    peerLabel = 'Waiting to connect';
+    guidance = '🔗 Waiting for peer to join. Share your invite link above!';
+  } else if (
+    status.state === 'completed' ||
+    (my.downloaded && peer.downloaded)
+  ) {
+    myLabel = '⬇️ Downloaded';
+    peerLabel = '⬇️ Downloaded';
+    guidance =
+      '🎉 Exchange completed successfully! Both files have been safely retrieved.';
+  } else if (
+    status.state === 'unlocked' ||
+    (my.validated && peer.validated && my.uploaded && peer.uploaded)
+  ) {
+    myLabel = my.downloaded ? '⬇️ Downloaded' : '🔓 Unlocked';
+    peerLabel = peer.downloaded ? '⬇️ Downloaded' : '🔓 Unlocked';
+    if (my.downloaded) {
+      guidance =
+        '⬇️ You have downloaded your file. Waiting for peer to complete download...';
+    } else if (peer.downloaded) {
+      guidance =
+        '👤 Peer downloaded your file. Click DOWNLOAD to retrieve yours!';
+    } else {
+      guidance =
+        "🔓 Exchange unlocked! Click DOWNLOAD to retrieve your peer's file.";
+    }
+  } else if (my.uploaded && peer.uploaded) {
+    if (my.validated && !peer.validated) {
+      myLabel = '✅ Validated';
+      peerLabel = '⏳ Pending validation';
+      guidance =
+        '⏳ You validated! Waiting for peer to review preview and validate...';
+    } else if (!my.validated && peer.validated) {
+      myLabel = '⏳ Pending validation';
+      peerLabel = '✅ Validated';
+      guidance =
+        '👉 Peer has validated! Click PREVIEW to inspect, then VALIDATE to unlock.';
+    } else {
+      myLabel = '⏳ Ready to validate';
+      peerLabel = '⏳ Ready to validate';
+      guidance =
+        '👀 Both files uploaded! Click PREVIEW to inspect, then VALIDATE when ready.';
+    }
+  } else if (my.uploaded && !peer.uploaded) {
+    myLabel = '📤 Uploaded';
+    peerLabel = '✍️ Upload pending';
+    guidance = '📤 Your file is uploaded. Waiting for peer to upload theirs...';
+  } else if (!my.uploaded && peer.uploaded) {
+    myLabel = '✍️ Upload needed';
+    peerLabel = '📤 Uploaded';
+    guidance =
+      '👉 Peer has uploaded a file! Please select and upload your file to continue.';
+  } else {
+    myLabel = '✍️ No file';
+    peerLabel = '👤 Connected';
+    guidance = '👋 Peer joined! Both users can now select and upload a file.';
+  }
+
+  logStatus(`🧑 You: ${myLabel}  •  👤 Peer: ${peerLabel}\n${guidance} █`);
 }

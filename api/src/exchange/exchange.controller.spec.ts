@@ -108,6 +108,7 @@ describe('ExchangeController', () => {
     expect(response.status).toHaveBeenCalledWith(403);
     expect(response.json).toHaveBeenCalledWith({
       error: 'Both parties must validate first',
+      message: 'Both parties must validate first',
     });
   });
 

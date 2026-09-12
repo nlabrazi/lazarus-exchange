@@ -483,7 +483,10 @@ export class ExchangeService implements OnModuleDestroy {
     };
   }
 
-  parseSessionToken(token: string): SessionIdentity {
+  parseSessionToken(
+    token: string,
+    options?: { allowRevokedEpoch?: boolean },
+  ): SessionIdentity {
     const parts = token.split('.');
     if (parts.length !== 3 || !parts[0] || !parts[1] || !parts[2]) {
       throw new HttpException('Invalid session token', HttpStatus.UNAUTHORIZED);
@@ -514,7 +517,10 @@ export class ExchangeService implements OnModuleDestroy {
     }
 
     const payload = this.parsePayload(payloadEncoded);
-    if (payload.e !== this.currentSessionEpoch(payload.s)) {
+    if (
+      !options?.allowRevokedEpoch &&
+      payload.e !== this.currentSessionEpoch(payload.s)
+    ) {
       throw new HttpException('Session token revoked', HttpStatus.UNAUTHORIZED);
     }
 
@@ -1040,7 +1046,11 @@ export class ExchangeService implements OnModuleDestroy {
   async resetSession(sessionId: string, userId: string): Promise<boolean> {
     this.cleanupExpiredState();
     const session = this.sessions.get(sessionId);
-    if (!session?.users[userId]) return false;
+    if (!session) {
+      // Session already cleaned up or reset by peer
+      return true;
+    }
+    if (!session.users[userId]) return false;
 
     const peerId = this.getPeerId(sessionId, userId);
     const me = session.users[userId];

@@ -1,11 +1,13 @@
-export function friendlyErrorFromApi({ status, text, json }) {
+export function friendlyErrorFromApi({ status, text, json, context }) {
   const raw = text || (json ? JSON.stringify(json) : '');
   const message =
     typeof json?.message === 'string'
       ? json.message
       : Array.isArray(json?.message) && typeof json.message[0] === 'string'
         ? json.message[0]
-        : '';
+        : typeof json?.error === 'string'
+          ? json.error
+          : '';
 
   if (status === 400) {
     if (message === 'Upload a file before validating') {
@@ -30,7 +32,8 @@ export function friendlyErrorFromApi({ status, text, json }) {
 
   if (status === 403) {
     if (
-      message === 'Both parties must validate first' ||
+      context === 'Download' ||
+      message.includes('Both parties must validate first') ||
       raw.includes('Both parties must validate first')
     ) {
       return {
@@ -50,7 +53,7 @@ export function friendlyErrorFromApi({ status, text, json }) {
     }
 
     return {
-      user: 'Access denied. This session is no longer valid.',
+      user: 'Access denied. Action not permitted in current session state.',
       dev: { status, raw },
     };
   }
