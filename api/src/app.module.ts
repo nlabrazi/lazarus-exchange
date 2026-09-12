@@ -6,9 +6,10 @@ import { ExchangePreviewService } from './exchange/exchange-preview.service';
 import { HealthModule } from './health/health.module';
 import { ApiRateLimitService } from './security/api-rate-limit.service';
 import { RouteRateLimitGuard } from './security/route-rate-limit.guard';
+import { StorageModule } from './storage/storage.module';
 
 @Module({
-  imports: [HealthModule],
+  imports: [HealthModule, StorageModule],
   controllers: [ExchangeController],
   providers: [
     ExchangeService,

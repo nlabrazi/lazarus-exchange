@@ -7,12 +7,17 @@ import {
 import {
   HttpException,
   HttpStatus,
+  Inject,
   Injectable,
   type OnModuleDestroy,
 } from '@nestjs/common';
-import { createClient } from '@supabase/supabase-js';
+import {
+  STORAGE_DRIVER,
+  type StorageDriver,
+} from '../storage/storage-driver.interface';
 import { logApiInfo, logApiWarn } from '../utils/api-logger';
 import type { PreviewMeta, SessionLifecycleState } from './exchange-file.types';
+
 import { ExchangeFilePolicyService } from './exchange-file-policy.service';
 import { ExchangePreviewService } from './exchange-preview.service';
 import {
@@ -72,7 +77,6 @@ type InviteData = {
   expiresAt: number;
 };
 
-const BUCKET = (process.env.SUPABASE_BUCKET ?? '').trim() || 'exchange';
 const MAX_UPLOADS_PER_DAY = readPositiveIntEnv('MAX_UPLOADS_PER_DAY', 15);
 const MAX_MB_PER_DAY = readPositiveIntEnv('MAX_MB_PER_DAY', 200);
 const MAX_BYTES_PER_DAY = MAX_MB_PER_DAY * 1024 * 1024;
@@ -91,7 +95,6 @@ const INVITE_ALPHABET =
 export class ExchangeService implements OnModuleDestroy {
   private readonly sessions = new Map<string, SessionData>();
   private readonly dailyUsage = new Map<string, DailyUsage>();
-  private readonly supabase: ReturnType<typeof createClient>;
   private readonly sessionEpoch = new Map<string, number>();
   private readonly invites = new Map<string, InviteData>();
   private readonly inviteBySession = new Map<string, string>();
@@ -107,31 +110,19 @@ export class ExchangeService implements OnModuleDestroy {
   constructor(
     private readonly filePolicy: ExchangeFilePolicyService,
     private readonly previewService: ExchangePreviewService,
+    @Inject(STORAGE_DRIVER) private readonly storage: StorageDriver,
   ) {
-    const url = process.env.SUPABASE_URL;
-    const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
     const jwtSecret = (process.env.JWT_SECRET ?? '').trim();
 
-    if (!url || !key) {
-      throw new Error(
-        'Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in environment',
-      );
-    }
     if (!jwtSecret) {
       throw new Error(
-        'Missing JWT_SECRET in environment (use a dedicated JWT secret, not the Supabase service role key)',
-      );
-    }
-    if (jwtSecret === key) {
-      throw new Error(
-        'JWT_SECRET must be different from SUPABASE_SERVICE_ROLE_KEY',
+        'Missing JWT_SECRET in environment (use a dedicated JWT secret)',
       );
     }
     if (jwtSecret.length < 32) {
       throw new Error('JWT_SECRET must be at least 32 characters long');
     }
 
-    this.supabase = createClient(url, key, { auth: { persistSession: false } });
     this.tokenSecret = jwtSecret;
 
     const configuredTtl = Number(
@@ -642,13 +633,6 @@ export class ExchangeService implements OnModuleDestroy {
     return null;
   }
 
-  private throwStorageError(prefix: string, error: unknown): never {
-    throw new HttpException(
-      `${prefix}: ${errorMessageFromUnknown(error)}`,
-      HttpStatus.BAD_GATEWAY,
-    );
-  }
-
   private generateFileId(): string {
     return `f_${randomBytes(9).toString('base64url')}`;
   }
@@ -677,20 +661,19 @@ export class ExchangeService implements OnModuleDestroy {
   private async removePaths(paths: string[]): Promise<void> {
     const unique = [...new Set(paths.filter(Boolean))];
     if (unique.length === 0) return;
-
-    const { error } = await this.supabase.storage.from(BUCKET).remove(unique);
-    if (error) this.throwStorageError('Supabase remove failed', error);
+    await this.storage.remove(unique);
   }
 
   private async removePathsQuietly(paths: string[]): Promise<void> {
     const unique = [...new Set(paths.filter(Boolean))];
     if (unique.length === 0) return;
 
-    const { error } = await this.supabase.storage.from(BUCKET).remove(unique);
-    if (error) {
+    try {
+      await this.storage.remove(unique);
+    } catch (error) {
       logApiWarn({
         route: 'internal',
-        message: 'supabase_remove_failed',
+        message: 'storage_remove_failed',
         context: ExchangeService.name,
         extra: { paths: unique.length, error: errorMessageFromUnknown(error) },
       });
@@ -727,15 +710,7 @@ export class ExchangeService implements OnModuleDestroy {
     const uploadedPaths: string[] = [];
 
     try {
-      const { error: originalError } = await this.supabase.storage
-        .from(BUCKET)
-        .upload(originalPath, file.buffer, {
-          contentType: validatedMime.mime,
-          upsert: true,
-        });
-
-      if (originalError)
-        this.throwStorageError('Supabase upload failed', originalError);
+      await this.storage.upload(originalPath, file.buffer, validatedMime.mime);
       uploadedPaths.push(originalPath);
 
       const preview = await this.previewService.generatePreview(
@@ -744,14 +719,7 @@ export class ExchangeService implements OnModuleDestroy {
         safeName,
       );
 
-      const { error: previewError } = await this.supabase.storage
-        .from(BUCKET)
-        .upload(previewPath, preview.bytes, {
-          contentType: 'image/webp',
-          upsert: true,
-        });
-      if (previewError)
-        this.throwStorageError('Supabase upload failed', previewError);
+      await this.storage.upload(previewPath, preview.bytes, 'image/webp');
       uploadedPaths.push(previewPath);
 
       session.users[userId].file = {
@@ -900,22 +868,15 @@ export class ExchangeService implements OnModuleDestroy {
       throw new HttpException('Preview is not ready yet', HttpStatus.CONFLICT);
     }
 
-    const { data, error } = await this.supabase.storage
-      .from(BUCKET)
-      .createSignedUrl(peerFile.previewPath, this.previewUrlTtlSeconds);
-
-    if (error) this.throwStorageError('Supabase signed URL failed', error);
-    if (!data?.signedUrl) {
-      throw new HttpException(
-        'Supabase signed URL missing',
-        HttpStatus.BAD_GATEWAY,
-      );
-    }
+    const signedUrl = await this.storage.createSignedUrl(
+      peerFile.previewPath,
+      this.previewUrlTtlSeconds,
+    );
 
     return {
       fileId: peerFile.fileId,
       previewStatus: 'ready',
-      previewUrl: data.signedUrl,
+      previewUrl: signedUrl,
       expiresIn: this.previewUrlTtlSeconds,
       previewMeta: peerFile.previewMeta,
     };
@@ -994,27 +955,7 @@ export class ExchangeService implements OnModuleDestroy {
     const meta = session.users[peerId]?.file;
     if (!meta) return null;
 
-    const { data, error } = await this.supabase.storage
-      .from(BUCKET)
-      .createSignedUrl(meta.originalPath, 60);
-
-    if (error) this.throwStorageError('Supabase signed URL failed', error);
-    if (!data?.signedUrl) {
-      throw new HttpException(
-        'Supabase signed URL missing',
-        HttpStatus.BAD_GATEWAY,
-      );
-    }
-
-    const resp = await fetch(data.signedUrl);
-    if (!resp.ok) {
-      throw new HttpException(
-        `Download failed with status ${resp.status}`,
-        HttpStatus.BAD_GATEWAY,
-      );
-    }
-
-    const arrayBuffer = await resp.arrayBuffer();
+    const downloaded = await this.storage.download(meta.originalPath);
 
     session.users[userId].downloaded = true;
     logApiInfo({
@@ -1035,8 +976,8 @@ export class ExchangeService implements OnModuleDestroy {
 
     return {
       originalname: meta.originalname,
-      mimetype: meta.mimetype,
-      bytes: new Uint8Array(arrayBuffer),
+      mimetype: downloaded.mimetype || meta.mimetype,
+      bytes: downloaded.bytes,
       sha256: meta.sha256,
     };
   }

@@ -1,18 +1,8 @@
-jest.mock('@supabase/supabase-js', () => ({
-  createClient: jest.fn(),
-}));
-
 import { HttpException, HttpStatus } from '@nestjs/common';
-import { createClient } from '@supabase/supabase-js';
+import type { StorageDriver } from '../storage/storage-driver.interface';
 import { ExchangeService } from './exchange.service';
 import type { ExchangeFilePolicyService } from './exchange-file-policy.service';
 import type { ExchangePreviewService } from './exchange-preview.service';
-
-type MockStorageBucket = {
-  upload: jest.Mock;
-  remove: jest.Mock;
-  createSignedUrl: jest.Mock;
-};
 
 function buildTextFile(name: string, content: string): Express.Multer.File {
   const buffer = Buffer.from(content, 'utf8');
@@ -30,18 +20,9 @@ function buildTextFile(name: string, content: string): Express.Multer.File {
   } as Express.Multer.File;
 }
 
-function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
-  return bytes.buffer.slice(
-    bytes.byteOffset,
-    bytes.byteOffset + bytes.byteLength,
-  );
-}
-
 describe('ExchangeService', () => {
-  const mockedCreateClient = jest.mocked(createClient);
-
   let service: ExchangeService;
-  let storageBucket: MockStorageBucket;
+  let storage: jest.Mocked<StorageDriver>;
   let filePolicy: jest.Mocked<
     Pick<
       ExchangeFilePolicyService,
@@ -51,32 +32,23 @@ describe('ExchangeService', () => {
   let previewService: jest.Mocked<
     Pick<ExchangePreviewService, 'generatePreview'>
   >;
-  let fetchMock: jest.MockedFunction<typeof fetch>;
 
   function buildService() {
-    process.env.SUPABASE_URL = 'https://example.supabase.co';
-    process.env.SUPABASE_SERVICE_ROLE_KEY =
-      'supabase_service_role_key_for_tests_only_1234567890';
     process.env.JWT_SECRET = 'jwt_secret_for_tests_only_12345678901234567890';
 
-    storageBucket = {
-      upload: jest.fn().mockResolvedValue({ error: null }),
-      remove: jest.fn().mockResolvedValue({ error: null }),
-      createSignedUrl: jest.fn().mockImplementation((path: string) =>
-        Promise.resolve({
-          data: {
-            signedUrl: `https://signed.example/${encodeURIComponent(path)}`,
-          },
-          error: null,
-        }),
-      ),
+    storage = {
+      upload: jest.fn().mockResolvedValue(undefined),
+      remove: jest.fn().mockResolvedValue(undefined),
+      createSignedUrl: jest
+        .fn()
+        .mockImplementation((path: string) =>
+          Promise.resolve(`https://signed.example/${encodeURIComponent(path)}`),
+        ),
+      download: jest.fn().mockResolvedValue({
+        bytes: Uint8Array.from(Buffer.from('peer-secret-file')),
+        mimetype: 'text/plain',
+      }),
     };
-
-    mockedCreateClient.mockReturnValue({
-      storage: {
-        from: jest.fn().mockReturnValue(storageBucket),
-      },
-    } as never);
 
     filePolicy = {
       detectValidatedMime: jest
@@ -98,24 +70,20 @@ describe('ExchangeService', () => {
       }),
     };
 
-    fetchMock = jest.fn();
-    global.fetch = fetchMock;
-
     service = new ExchangeService(
       filePolicy as unknown as ExchangeFilePolicyService,
       previewService as unknown as ExchangePreviewService,
+      storage,
     );
   }
 
   beforeEach(() => {
-    delete process.env.JWT_TTL_SECONDS;
+    jest.restoreAllMocks();
     buildService();
   });
 
   afterEach(() => {
     service.onModuleDestroy();
-    jest.restoreAllMocks();
-    jest.clearAllMocks();
   });
 
   it('should be defined', () => {
@@ -261,11 +229,10 @@ describe('ExchangeService', () => {
     const downloadedPeerBytes = Uint8Array.from(
       Buffer.from('peer-secret-file'),
     );
-    fetchMock.mockResolvedValue({
-      ok: true,
-      status: 200,
-      arrayBuffer: () => Promise.resolve(toArrayBuffer(downloadedPeerBytes)),
-    } as Response);
+    storage.download.mockResolvedValueOnce({
+      bytes: downloadedPeerBytes,
+      mimetype: 'text/plain',
+    });
 
     expect(service.canDownload(owner.sessionId, owner.userId)).toBe(false);
 
@@ -291,10 +258,7 @@ describe('ExchangeService', () => {
       bytes: downloadedPeerBytes,
       sha256: peerUpload.sha256,
     });
-    expect(fetchMock).toHaveBeenCalledWith(
-      expect.stringContaining('/originals%2F'),
-    );
-    expect(storageBucket.upload).toHaveBeenCalledTimes(4);
+    expect(storage.upload).toHaveBeenCalledTimes(4);
 
     const statusAfterOwnerDownload = service.getStatus(
       owner.sessionId,
@@ -303,20 +267,17 @@ describe('ExchangeService', () => {
     expect(statusAfterOwnerDownload?.me.downloaded).toBe(true);
     expect(statusAfterOwnerDownload?.peer?.downloaded).toBe(false);
 
-    // Anti-scam: peer tries to reset immediately before owner has downloaded peer's file
-    // Here owner downloaded peer's file, but peer has not downloaded owner's file yet.
-    // So owner tries to reset to screw peer -> blocked!
+    // Anti-scam: owner tries to reset immediately before peer has downloaded owner's file -> blocked!
     await expect(
       service.resetSession(owner.sessionId, owner.userId),
     ).rejects.toThrow(HttpException);
 
     // Now peer downloads owner's file
     const downloadedOwnerBytes = Uint8Array.from(Buffer.from('owner-secret'));
-    fetchMock.mockResolvedValue({
-      ok: true,
-      status: 200,
-      arrayBuffer: () => Promise.resolve(toArrayBuffer(downloadedOwnerBytes)),
-    } as Response);
+    storage.download.mockResolvedValueOnce({
+      bytes: downloadedOwnerBytes,
+      mimetype: 'text/plain',
+    });
 
     await service.getPeerFileDownload(peer.sessionId, peer.userId);
 
