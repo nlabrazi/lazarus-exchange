@@ -1,4 +1,9 @@
-import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import {
+  createHash,
+  createHmac,
+  randomBytes,
+  timingSafeEqual,
+} from 'node:crypto';
 import {
   HttpException,
   HttpStatus,
@@ -7,7 +12,7 @@ import {
 } from '@nestjs/common';
 import { createClient } from '@supabase/supabase-js';
 import { logApiInfo, logApiWarn } from '../utils/api-logger';
-import type { PreviewMeta } from './exchange-file.types';
+import type { PreviewMeta, SessionLifecycleState } from './exchange-file.types';
 import { ExchangeFilePolicyService } from './exchange-file-policy.service';
 import { ExchangePreviewService } from './exchange-preview.service';
 import {
@@ -21,6 +26,7 @@ type StoredFileMeta = {
   mimetype: string;
   extension: string;
   size: number;
+  sha256: string;
   originalPath: string;
   previewPath: string;
   previewStatus: 'ready';
@@ -31,11 +37,14 @@ type StoredFileMeta = {
 type FileData = {
   file?: StoredFileMeta;
   validated?: boolean;
+  downloaded?: boolean;
 };
 
 type SessionData = {
   users: Record<string, FileData>;
   expiresAt: number;
+  unlockedAt?: number | null;
+  gracePeriodExpiresAt?: number | null;
 };
 
 type DailyUsage = {
@@ -69,6 +78,7 @@ const MAX_MB_PER_DAY = readPositiveIntEnv('MAX_MB_PER_DAY', 200);
 const MAX_BYTES_PER_DAY = MAX_MB_PER_DAY * 1024 * 1024;
 const DEFAULT_JWT_TTL_SECONDS = 60 * 60 * 24 * 7;
 const DEFAULT_INVITE_TTL_SECONDS = 60 * 15;
+const DEFAULT_GRACE_PERIOD_SECONDS = 600;
 const DEFAULT_PREVIEW_URL_TTL_SECONDS = 180;
 const MIN_PREVIEW_URL_TTL_SECONDS = 60;
 const MAX_PREVIEW_URL_TTL_SECONDS = 300;
@@ -88,6 +98,7 @@ export class ExchangeService implements OnModuleDestroy {
   private readonly tokenSecret: string;
   private readonly tokenTtlSeconds: number;
   private readonly inviteTtlSeconds: number;
+  private readonly gracePeriodMs: number;
   private readonly previewUrlTtlSeconds: number;
   private readonly sessionTtlMs: number;
   private activeUsageDay = this.dayStamp(Date.now());
@@ -151,6 +162,12 @@ export class ExchangeService implements OnModuleDestroy {
       Math.max(MIN_PREVIEW_URL_TTL_SECONDS, safePreviewTtl),
     );
     this.sessionTtlMs = this.tokenTtlSeconds * 1000;
+
+    const configuredGrace = readPositiveIntEnv(
+      'GRACE_PERIOD_SECONDS',
+      DEFAULT_GRACE_PERIOD_SECONDS,
+    );
+    this.gracePeriodMs = configuredGrace * 1000;
 
     this.cleanupTimer = setInterval(() => {
       this.cleanupExpiredState();
@@ -686,6 +703,7 @@ export class ExchangeService implements OnModuleDestroy {
     file: Express.Multer.File,
   ): Promise<{
     fileId: string;
+    sha256: string;
     previewStatus: 'ready';
     previewMeta: PreviewMeta;
   }> {
@@ -698,6 +716,7 @@ export class ExchangeService implements OnModuleDestroy {
     const validatedMime = this.filePolicy.detectValidatedMime(file);
 
     const fileId = this.generateFileId();
+    const sha256 = createHash('sha256').update(file.buffer).digest('hex');
     const originalPath = this.buildOriginalPath(
       sessionId,
       fileId,
@@ -741,6 +760,7 @@ export class ExchangeService implements OnModuleDestroy {
         mimetype: validatedMime.mime,
         extension: validatedMime.ext,
         size: file.size,
+        sha256,
         originalPath,
         previewPath,
         previewStatus: 'ready',
@@ -748,10 +768,14 @@ export class ExchangeService implements OnModuleDestroy {
         uploadedAt: Date.now(),
       };
       session.users[userId].validated = false;
+      session.users[userId].downloaded = false;
+      session.unlockedAt = null;
+      session.gracePeriodExpiresAt = null;
 
       await this.removePathsQuietly(this.storagePathsForFile(previousFile));
       return {
         fileId,
+        sha256,
         previewStatus: 'ready',
         previewMeta: preview.meta,
       };
@@ -765,6 +789,34 @@ export class ExchangeService implements OnModuleDestroy {
     }
   }
 
+  resolveSessionState(sessionId: string): SessionLifecycleState {
+    const session = this.sessions.get(sessionId);
+    if (!session) return 'expired';
+    if (Date.now() >= session.expiresAt) return 'expired';
+
+    const userIds = Object.keys(session.users);
+    if (userIds.length < 2) return 'created';
+
+    const u1 = session.users[userIds[0]];
+    const u2 = session.users[userIds[1]];
+
+    const bothDownloaded = Boolean(u1?.downloaded && u2?.downloaded);
+    if (bothDownloaded) return 'completed';
+
+    const bothValidated = Boolean(
+      u1?.validated && u1?.file && u2?.validated && u2?.file,
+    );
+    if (bothValidated) return 'unlocked';
+
+    const bothUploaded = Boolean(u1?.file && u2?.file);
+    if (bothUploaded) return 'ready_for_validation';
+
+    const anyUploaded = Boolean(u1?.file || u2?.file);
+    if (anyUploaded) return 'uploading';
+
+    return 'paired';
+  }
+
   getStatus(sessionId: string, userId: string) {
     this.cleanupExpiredState();
     const session = this.sessions.get(sessionId);
@@ -775,17 +827,24 @@ export class ExchangeService implements OnModuleDestroy {
     const peer = peerId ? session.users[peerId] : null;
 
     return {
+      state: this.resolveSessionState(sessionId),
+      unlockedAt: session.unlockedAt ?? null,
+      gracePeriodExpiresAt: session.gracePeriodExpiresAt ?? null,
       me: {
         uploaded: Boolean(me.file),
         validated: Boolean(me.validated),
+        downloaded: Boolean(me.downloaded),
         fileId: me.file?.fileId ?? null,
+        sha256: me.file?.sha256 ?? null,
         previewReady: me.file?.previewStatus === 'ready',
       },
       peer: peer
         ? {
             uploaded: Boolean(peer.file),
             validated: Boolean(peer.validated),
+            downloaded: Boolean(peer.downloaded),
             fileId: peer.file?.fileId ?? null,
+            sha256: peer.file?.sha256 ?? null,
             previewReady: peer.file?.previewStatus === 'ready',
           }
         : null,
@@ -807,6 +866,7 @@ export class ExchangeService implements OnModuleDestroy {
       originalname: meta.originalname,
       size: meta.size,
       mimetype: meta.mimetype,
+      sha256: meta.sha256,
       previewStatus: meta.previewStatus,
       previewMeta: meta.previewMeta,
     };
@@ -878,6 +938,26 @@ export class ExchangeService implements OnModuleDestroy {
     }
 
     session.users[userId].validated = true;
+
+    const peerId = this.getPeerId(sessionId, userId);
+    const peer = peerId ? session.users[peerId] : null;
+
+    if (peer?.validated && peer?.file) {
+      if (!session.unlockedAt) {
+        session.unlockedAt = Date.now();
+        session.gracePeriodExpiresAt = Date.now() + this.gracePeriodMs;
+        logApiInfo({
+          route: 'internal',
+          message: 'exchange_unlocked',
+          context: ExchangeService.name,
+          extra: {
+            sessionId,
+            gracePeriodExpiresAt: session.gracePeriodExpiresAt,
+          },
+        });
+      }
+    }
+
     return true;
   }
 
@@ -902,6 +982,7 @@ export class ExchangeService implements OnModuleDestroy {
     originalname: string;
     mimetype: string;
     bytes: Uint8Array;
+    sha256: string;
   } | null> {
     this.cleanupExpiredState();
     const session = this.sessions.get(sessionId);
@@ -935,10 +1016,28 @@ export class ExchangeService implements OnModuleDestroy {
 
     const arrayBuffer = await resp.arrayBuffer();
 
+    session.users[userId].downloaded = true;
+    logApiInfo({
+      route: 'internal',
+      message: 'file_downloaded',
+      context: ExchangeService.name,
+      extra: { sessionId, userId, fileId: meta.fileId },
+    });
+
+    if (session.users[peerId]?.downloaded) {
+      logApiInfo({
+        route: 'internal',
+        message: 'exchange_completed',
+        context: ExchangeService.name,
+        extra: { sessionId },
+      });
+    }
+
     return {
       originalname: meta.originalname,
       mimetype: meta.mimetype,
       bytes: new Uint8Array(arrayBuffer),
+      sha256: meta.sha256,
     };
   }
 
@@ -946,6 +1045,35 @@ export class ExchangeService implements OnModuleDestroy {
     this.cleanupExpiredState();
     const session = this.sessions.get(sessionId);
     if (!session?.users[userId]) return false;
+
+    const peerId = this.getPeerId(sessionId, userId);
+    const me = session.users[userId];
+    const peer = peerId ? session.users[peerId] : null;
+
+    // Check if exchange reached unlocked state
+    const isUnlocked = Boolean(
+      me?.file && me?.validated && peer?.file && peer?.validated,
+    );
+
+    if (isUnlocked) {
+      const bothDownloaded = Boolean(me?.downloaded && peer?.downloaded);
+      const nowMs = Date.now();
+      const graceExpiresAt = session.gracePeriodExpiresAt;
+      const gracePeriodActive =
+        graceExpiresAt != null && nowMs < graceExpiresAt;
+
+      // If one of the parties hasn't downloaded yet AND grace period is still active, block reset!
+      if (!bothDownloaded && gracePeriodActive && graceExpiresAt != null) {
+        const remainingSeconds = Math.max(
+          1,
+          Math.ceil((graceExpiresAt - nowMs) / 1000),
+        );
+        throw new HttpException(
+          `Cannot reset while exchange is unlocked and grace period is active (${remainingSeconds}s remaining). Wait for peer to download.`,
+          HttpStatus.FORBIDDEN,
+        );
+      }
+    }
 
     const paths: string[] = [];
     for (const userKey in session.users) {

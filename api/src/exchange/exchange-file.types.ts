@@ -1,3 +1,12 @@
+export type SessionLifecycleState =
+  | 'created'
+  | 'paired'
+  | 'uploading'
+  | 'ready_for_validation'
+  | 'unlocked'
+  | 'completed'
+  | 'expired';
+
 export type PreviewMeta = {
   format: 'webp';
   width: number;

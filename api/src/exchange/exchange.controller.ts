@@ -160,6 +160,7 @@ export class ExchangeController {
     res.set({
       'Content-Type': download.mimetype ?? 'application/octet-stream',
       'Content-Disposition': `attachment; filename="${download.originalname}"`,
+      'X-File-SHA256': download.sha256,
       'Cache-Control': 'no-store',
     });
 

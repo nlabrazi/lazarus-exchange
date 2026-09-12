@@ -126,10 +126,15 @@ describe('ExchangeService', () => {
     const issued = service.createSessionTokenForNewUser();
 
     expect(service.getStatus(issued.sessionId, issued.userId)).toEqual({
+      state: 'created',
+      unlockedAt: null,
+      gracePeriodExpiresAt: null,
       me: {
         uploaded: false,
         validated: false,
+        downloaded: false,
         fileId: null,
+        sha256: null,
         previewReady: false,
       },
       peer: null,
@@ -186,18 +191,27 @@ describe('ExchangeService', () => {
     expect(owner.sessionId).toBe(peer.sessionId);
     expect(ownerUpload.previewStatus).toBe('ready');
     expect(peerUpload.previewStatus).toBe('ready');
+    expect(ownerUpload.sha256).toBeDefined();
+    expect(peerUpload.sha256).toBeDefined();
 
     expect(service.getStatus(owner.sessionId, owner.userId)).toEqual({
+      state: 'ready_for_validation',
+      unlockedAt: null,
+      gracePeriodExpiresAt: null,
       me: {
         uploaded: true,
         validated: false,
+        downloaded: false,
         fileId: ownerUpload.fileId,
+        sha256: ownerUpload.sha256,
         previewReady: true,
       },
       peer: {
         uploaded: true,
         validated: false,
+        downloaded: false,
         fileId: peerUpload.fileId,
+        sha256: peerUpload.sha256,
         previewReady: true,
       },
     });
@@ -207,6 +221,7 @@ describe('ExchangeService', () => {
       originalname: 'safe-peer.txt',
       size: Buffer.byteLength('peer secret'),
       mimetype: 'text/plain',
+      sha256: peerUpload.sha256,
       previewStatus: 'ready',
       previewMeta: {
         format: 'webp',
@@ -260,6 +275,11 @@ describe('ExchangeService', () => {
     service.validate(peer.sessionId, peer.userId);
     expect(service.canDownload(owner.sessionId, owner.userId)).toBe(true);
 
+    const statusAfterUnlock = service.getStatus(owner.sessionId, owner.userId);
+    expect(statusAfterUnlock?.state).toBe('unlocked');
+    expect(statusAfterUnlock?.unlockedAt).toBeDefined();
+    expect(statusAfterUnlock?.gracePeriodExpiresAt).toBeDefined();
+
     const download = await service.getPeerFileDownload(
       owner.sessionId,
       owner.userId,
@@ -269,10 +289,44 @@ describe('ExchangeService', () => {
       originalname: 'safe-peer.txt',
       mimetype: 'text/plain',
       bytes: downloadedPeerBytes,
+      sha256: peerUpload.sha256,
     });
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining('/originals%2F'),
     );
     expect(storageBucket.upload).toHaveBeenCalledTimes(4);
+
+    const statusAfterOwnerDownload = service.getStatus(
+      owner.sessionId,
+      owner.userId,
+    );
+    expect(statusAfterOwnerDownload?.me.downloaded).toBe(true);
+    expect(statusAfterOwnerDownload?.peer?.downloaded).toBe(false);
+
+    // Anti-scam: peer tries to reset immediately before owner has downloaded peer's file
+    // Here owner downloaded peer's file, but peer has not downloaded owner's file yet.
+    // So owner tries to reset to screw peer -> blocked!
+    await expect(
+      service.resetSession(owner.sessionId, owner.userId),
+    ).rejects.toThrow(HttpException);
+
+    // Now peer downloads owner's file
+    const downloadedOwnerBytes = Uint8Array.from(Buffer.from('owner-secret'));
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      arrayBuffer: () => Promise.resolve(toArrayBuffer(downloadedOwnerBytes)),
+    } as Response);
+
+    await service.getPeerFileDownload(peer.sessionId, peer.userId);
+
+    const statusCompleted = service.getStatus(owner.sessionId, owner.userId);
+    expect(statusCompleted?.state).toBe('completed');
+    expect(statusCompleted?.me.downloaded).toBe(true);
+    expect(statusCompleted?.peer?.downloaded).toBe(true);
+
+    // Now both downloaded: reset is allowed!
+    const resetOk = await service.resetSession(owner.sessionId, owner.userId);
+    expect(resetOk).toBe(true);
   });
 });
