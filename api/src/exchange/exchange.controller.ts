@@ -4,16 +4,20 @@ import {
   Headers,
   HttpException,
   HttpStatus,
+  type MessageEvent,
   Param,
   Post,
+  Query,
   Req,
   Res,
+  Sse,
   UploadedFile,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import type { Request, Response } from 'express';
+import type { Observable } from 'rxjs';
 import { ApiRateLimitService } from '../security/api-rate-limit.service';
 import { RateLimitRoute } from '../security/rate-limit-route.decorator';
 import { RouteRateLimitGuard } from '../security/route-rate-limit.guard';
@@ -98,6 +102,27 @@ export class ExchangeController {
       file,
     );
     return { ...upload, maxFileMb: MAX_FILE_MB };
+  }
+
+  @Sse('events')
+  streamSessionEvents(
+    @Query('token') queryToken?: string,
+    @Headers('authorization') authHeader?: string,
+  ): Observable<MessageEvent> {
+    const rawToken =
+      queryToken ||
+      (authHeader?.toLowerCase().startsWith('bearer ')
+        ? authHeader.slice(7).trim()
+        : undefined);
+
+    if (!rawToken) {
+      throw new HttpException('Missing session token', HttpStatus.UNAUTHORIZED);
+    }
+
+    const { sessionId, userId } =
+      this.exchangeService.parseSessionToken(rawToken);
+
+    return this.exchangeService.getSessionEventStream(sessionId, userId);
   }
 
   @Get('status')

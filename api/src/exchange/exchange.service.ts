@@ -9,8 +9,11 @@ import {
   HttpStatus,
   Inject,
   Injectable,
+  type MessageEvent,
   type OnModuleDestroy,
 } from '@nestjs/common';
+import { concat, Observable, of, Subject } from 'rxjs';
+import { filter, map } from 'rxjs/operators';
 import {
   STORAGE_DRIVER,
   type StorageDriver,
@@ -166,8 +169,55 @@ export class ExchangeService implements OnModuleDestroy {
     this.cleanupTimer.unref?.();
   }
 
+  private readonly sessionEvents$ = new Subject<{
+    sessionId: string;
+    type: 'status_updated' | 'session_reset';
+    timestamp: number;
+  }>();
+
   onModuleDestroy() {
     clearInterval(this.cleanupTimer);
+  }
+
+  emitSessionEvent(
+    sessionId: string,
+    type: 'status_updated' | 'session_reset' = 'status_updated',
+  ): void {
+    this.sessionEvents$.next({
+      sessionId,
+      type,
+      timestamp: Date.now(),
+    });
+  }
+
+  getSessionEventStream(
+    sessionId: string,
+    userId: string,
+  ): Observable<MessageEvent> {
+    const initialStatus = this.getStatus(sessionId, userId);
+    const initial$ = of({
+      data: initialStatus,
+      type: 'status',
+    } as MessageEvent);
+
+    const updates$ = this.sessionEvents$.pipe(
+      filter((event) => event.sessionId === sessionId),
+      map((event) => {
+        if (event.type === 'session_reset') {
+          return {
+            data: { reset: true },
+            type: 'reset',
+          } as MessageEvent;
+        }
+
+        return {
+          data: this.getStatus(sessionId, userId),
+          type: 'status',
+        } as MessageEvent;
+      }),
+    );
+
+    return concat(initial$, updates$);
   }
 
   private generateId(prefix: 's' | 'u'): string {
@@ -558,6 +608,7 @@ export class ExchangeService implements OnModuleDestroy {
       'invite_accept',
     );
     this.getOrCreateSession(invite.sessionId, issued.expiresAt);
+    this.emitSessionEvent(invite.sessionId);
     return issued;
   }
 
@@ -741,6 +792,7 @@ export class ExchangeService implements OnModuleDestroy {
       session.gracePeriodExpiresAt = null;
 
       await this.removePathsQuietly(this.storagePathsForFile(previousFile));
+      this.emitSessionEvent(sessionId);
       return {
         fileId,
         sha256,
@@ -919,6 +971,7 @@ export class ExchangeService implements OnModuleDestroy {
       }
     }
 
+    this.emitSessionEvent(sessionId);
     return true;
   }
 
@@ -973,6 +1026,8 @@ export class ExchangeService implements OnModuleDestroy {
         extra: { sessionId },
       });
     }
+
+    this.emitSessionEvent(sessionId);
 
     return {
       originalname: meta.originalname,
@@ -1029,6 +1084,7 @@ export class ExchangeService implements OnModuleDestroy {
     this.revokeSessionInvite(sessionId);
     this.bumpSessionEpoch(sessionId);
     this.sessions.delete(sessionId);
+    this.emitSessionEvent(sessionId, 'session_reset');
     logApiInfo({
       route: 'internal',
       message: 'session_reset',

@@ -23,6 +23,9 @@ export function createApiClient(baseUrl) {
         method: 'POST',
       });
     },
+    getEventsUrl(token) {
+      return `${endpoint('events')}?token=${segment(token)}`;
+    },
     status(token, options = {}) {
       return fetch(endpoint('status'), withAuth(token, options));
     },

@@ -12,6 +12,8 @@ export function createStatusPoller({
   let lastStatusSignature = '';
   let isLeader = false;
 
+  let eventSource = null;
+
   function setPollDelay(ms) {
     pollDelayMs = Math.max(config.minDelayMs, Math.min(config.maxDelayMs, ms));
   }
@@ -26,12 +28,62 @@ export function createStatusPoller({
     if (!me) return '';
 
     const peer = status.peer || {};
-    // Signature only tracks fields currently rendered by the UI.
-    return `${Number(Boolean(me.uploaded))}|${Number(Boolean(me.validated))}|${Number(
-      Boolean(me.previewReady),
-    )}|${Number(Boolean(peer.uploaded))}|${Number(Boolean(peer.validated))}|${Number(
-      Boolean(peer.previewReady),
-    )}`;
+    return `${status.state || ''}|${Number(Boolean(me.uploaded))}|${Number(
+      Boolean(me.validated),
+    )}|${Number(Boolean(me.downloaded))}|${Number(Boolean(me.previewReady))}|${
+      me.sha256 || ''
+    }|${Number(Boolean(peer.uploaded))}|${Number(Boolean(peer.validated))}|${Number(
+      Boolean(peer.downloaded),
+    )}|${Number(Boolean(peer.previewReady))}|${peer.sha256 || ''}`;
+  }
+
+  function handleStatusPayload(status) {
+    if (!status?.me) return;
+
+    const newSignature = statusSignature(status);
+    const changed = newSignature !== lastStatusSignature;
+    lastStatusSignature = newSignature;
+
+    if (changed) {
+      onStatus(status);
+      setPollDelay(config.minDelayMs);
+    }
+  }
+
+  function connectEventSource() {
+    if (typeof EventSource === 'undefined') return;
+
+    const authToken = getAuthToken();
+    if (!authToken) return;
+
+    if (eventSource) {
+      eventSource.close();
+      eventSource = null;
+    }
+
+    try {
+      const url = apiClient.getEventsUrl(authToken);
+      eventSource = new EventSource(url);
+
+      eventSource.addEventListener('status', (event) => {
+        try {
+          const status = JSON.parse(event.data);
+          handleStatusPayload(status);
+        } catch {
+          // ignore parse errors
+        }
+      });
+
+      eventSource.addEventListener('reset', () => {
+        resetState();
+      });
+
+      eventSource.onerror = () => {
+        // EventSource automatically retries, fallback poller provides redundancy
+      };
+    } catch {
+      // EventSource failed, fallback to polling
+    }
   }
 
   function electLeader() {
@@ -110,25 +162,7 @@ export function createStatusPoller({
         return;
       }
 
-      const newSignature = statusSignature(status);
-      const changed = newSignature !== lastStatusSignature;
-      lastStatusSignature = newSignature;
-
-      if (changed) {
-        onStatus(status);
-      }
-
-      if (changed) {
-        setPollDelay(config.minDelayMs);
-      } else {
-        setPollDelay(
-          Math.min(
-            config.maxDelayMs,
-            currentBaseDelay() + config.idleIncrementMs,
-          ),
-        );
-      }
-
+      handleStatusPayload(status);
       schedule(currentBaseDelay());
     } catch (error) {
       const backoff = Math.min(config.maxDelayMs, currentBaseDelay() * 2);
@@ -143,11 +177,17 @@ export function createStatusPoller({
   }
 
   function start() {
+    connectEventSource();
     startLeaderHeartbeat();
     schedule(config.firstPollDelayMs);
   }
 
   function stop() {
+    if (eventSource) {
+      eventSource.close();
+      eventSource = null;
+    }
+
     if (pollTimer) {
       clearTimeout(pollTimer);
       pollTimer = null;
@@ -160,12 +200,16 @@ export function createStatusPoller({
   }
 
   function scheduleSoon(delayMs = config.wakeupPollDelayMs) {
+    if (!eventSource || eventSource.readyState !== EventSource.OPEN) {
+      connectEventSource();
+    }
     schedule(delayMs);
   }
 
   function resetState() {
     lastStatusSignature = '';
     setPollDelay(config.minDelayMs);
+    connectEventSource();
   }
 
   return {
