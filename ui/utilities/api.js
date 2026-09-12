@@ -23,17 +23,47 @@ export function createApiClient(baseUrl) {
         method: 'POST',
       });
     },
+    getEventsUrl(token) {
+      return `${endpoint('events')}?token=${segment(token)}`;
+    },
     status(token, options = {}) {
       return fetch(endpoint('status'), withAuth(token, options));
     },
-    upload(token, formData) {
-      return fetch(
-        endpoint('upload'),
-        withAuth(token, {
-          method: 'POST',
-          body: formData,
-        }),
-      );
+    upload(token, formData, onProgress) {
+      if (!onProgress) {
+        return fetch(
+          endpoint('upload'),
+          withAuth(token, {
+            method: 'POST',
+            body: formData,
+          }),
+        );
+      }
+      return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', endpoint('upload'));
+        if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+        xhr.upload.onprogress = (event) => {
+          if (event.lengthComputable) {
+            const percent = Math.round((event.loaded / event.total) * 100);
+            onProgress(percent);
+          }
+        };
+        xhr.onload = () => {
+          resolve({
+            ok: xhr.status >= 200 && xhr.status < 300,
+            status: xhr.status,
+            statusText: xhr.statusText,
+            text: () => Promise.resolve(xhr.responseText),
+            json: () => Promise.resolve(JSON.parse(xhr.responseText || '{}')),
+            headers: {
+              get: (name) => xhr.getResponseHeader(name),
+            },
+          });
+        };
+        xhr.onerror = () => reject(new TypeError('Network request failed'));
+        xhr.send(formData);
+      });
     },
     preview(token) {
       return fetch(endpoint('preview'), withAuth(token));

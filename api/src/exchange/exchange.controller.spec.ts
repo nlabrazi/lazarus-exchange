@@ -45,6 +45,7 @@ describe('ExchangeController', () => {
     canDownload: jest.Mock;
     getPeerFileDownload: jest.Mock;
     resetSession: jest.Mock;
+    getSessionEventStream: jest.Mock;
   };
 
   beforeEach(async () => {
@@ -61,6 +62,7 @@ describe('ExchangeController', () => {
       canDownload: jest.fn(),
       getPeerFileDownload: jest.fn(),
       resetSession: jest.fn(),
+      getSessionEventStream: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -106,6 +108,26 @@ describe('ExchangeController', () => {
     expect(response.status).toHaveBeenCalledWith(403);
     expect(response.json).toHaveBeenCalledWith({
       error: 'Both parties must validate first',
+      message: 'Both parties must validate first',
+    });
+  });
+
+  it('streams session events via SSE', (done) => {
+    exchangeService.parseSessionToken.mockReturnValue({
+      sessionId: 's_test',
+      userId: 'u_test',
+    });
+    const fakeEvent = { data: { state: 'created' }, type: 'status' };
+    const { of } = require('rxjs');
+    exchangeService.getSessionEventStream.mockReturnValue(of(fakeEvent));
+
+    const observable = controller.streamSessionEvents(
+      {} as never,
+      'test-token',
+    );
+    observable.subscribe((event) => {
+      expect(event).toEqual(fakeEvent);
+      done();
     });
   });
 });

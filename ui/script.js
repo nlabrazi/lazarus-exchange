@@ -9,6 +9,7 @@ import {
 import {
   clearPreviewImage,
   clearSelectedFile,
+  clearStatusCache,
   getSelectedFile,
   getShareLinkValue,
   logStatus,
@@ -62,6 +63,7 @@ async function handleBadResponse(context, res) {
     status: res.status,
     text,
     json,
+    context,
   });
   devLog(`${context} failed`, dev);
 
@@ -79,11 +81,24 @@ const authManager = createAuthManager({
   devLog,
 });
 
+async function handleRemoteReset() {
+  await authManager.issueFreshToken();
+  await refreshSessionUi();
+  clearSelectedFile();
+  clearPreviewImage('Session was reset by peer.');
+  statusPoller.resetState();
+  statusPoller.scheduleSoon(500);
+
+  clearStatusCache();
+  logStatus('🔄 Peer reset the session. A new session has started. █');
+  showToast('Peer reset the session. A new session has started.', 'info');
+}
+
 const statusPoller = createStatusPoller({
   apiClient,
   getAuthToken: authManager.getAuthToken,
   onStatus: renderExchangeStatus,
-  onError: logStatus,
+  onReset: handleRemoteReset,
   config: POLL_CONFIG,
   leaderStorageKey: LEADER_STORAGE_KEY,
 });
@@ -205,7 +220,7 @@ async function validate() {
   );
   if (!res) return;
 
-  logStatus('✅ Validation sent. Waiting for peer... █');
+  logStatus('✅ Validation confirmed. Waiting for peer to validate... █');
   showToast('Validation sent. Waiting for peer.', 'success');
   statusPoller.scheduleSoon(1000);
 }
@@ -227,16 +242,28 @@ async function download() {
   link.click();
   URL.revokeObjectURL(link.href);
 
-  logStatus('⬇️ Download started █');
+  logStatus('⬇️ Download started. Saving file... █');
   showToast(`Download started: ${filename}`, 'success');
 }
 
 async function resetSession() {
-  const res = await authManager.runAuthedRequest('Reset', (token) =>
-    apiClient.reset(token),
-  );
-  if (!res) return;
-  const data = await res.json().catch(() => null);
+  const token = authManager.getAuthToken();
+  if (token) {
+    try {
+      const res = await apiClient.reset(token);
+      if (!res.ok) {
+        if (res.status === 403) {
+          // Anti-scam protection: grace period is active, peer has not downloaded yet
+          await handleBadResponse('Reset', res);
+          return;
+        }
+        // If 401 or 404, the session was already revoked or reset on server.
+        // We smoothly proceed to reset locally and create a fresh session.
+      }
+    } catch (error) {
+      devLog('Reset request network error', error);
+    }
+  }
 
   const created = await authManager.issueFreshToken();
   if (!created) return;
@@ -247,13 +274,9 @@ async function resetSession() {
   statusPoller.resetState();
   statusPoller.scheduleSoon(500);
 
-  if (data?.success) {
-    logStatus('🔄 Session reset. Share the new link with your peer. █');
-    showToast('Session reset. Share the new link with your peer.', 'success');
-  } else {
-    logStatus('⚠️ No active session on server. New session started. █');
-    showToast('No active session found. New session started.', 'success');
-  }
+  clearStatusCache();
+  logStatus('🔄 Session reset. Share the new link with your peer. █');
+  showToast('Session reset. Share the new link with your peer.', 'success');
 }
 
 async function init() {
@@ -265,8 +288,7 @@ async function init() {
 
   await refreshSessionUi();
   clearPreviewImage();
-  const { sessionId, userId } = getSessionState();
-  logStatus(`🧑 You are: ${userId || '-'}\n🔐 Session: ${sessionId || '-'} █`);
+  logStatus('✨ Connected. Share the invite link to start exchanging. █');
 
   document.addEventListener('visibilitychange', () => {
     statusPoller.scheduleSoon();

@@ -13,6 +13,11 @@ const elements = {
 let toastTimer = null;
 let statusTypingTimer = null;
 let statusTypingVersion = 0;
+let lastLoggedNormalized = null;
+
+export function clearStatusCache() {
+  lastLoggedNormalized = null;
+}
 
 function requiredElement(id) {
   const element = elements[id];
@@ -77,11 +82,14 @@ export function clearPreviewImage(caption = 'No preview loaded yet.') {
   previewCaption.textContent = caption;
 }
 
-export function logStatus(message) {
+export function logStatus(message, options = {}) {
   const statusBox = requiredElement('statusBox');
   const normalized = statusMessageWithoutCursor(message);
-  statusTypingVersion += 1;
-  const version = statusTypingVersion;
+
+  if (normalized === lastLoggedNormalized) {
+    return;
+  }
+  lastLoggedNormalized = normalized;
 
   if (statusTypingTimer) {
     clearTimeout(statusTypingTimer);
@@ -100,20 +108,20 @@ export function logStatus(message) {
     return;
   }
 
-  // Keep the retro typing effect short so frequent poll updates stay responsive.
-  const shouldType = normalized.length <= 180;
-  if (!shouldType) {
+  if (!options.animate) {
     draw(normalized);
     return;
   }
 
+  statusTypingVersion += 1;
+  const version = statusTypingVersion;
   let index = 0;
   const step = () => {
     if (version !== statusTypingVersion) return;
-    index = Math.min(normalized.length, index + 2);
+    index = Math.min(normalized.length, index + 3);
     draw(normalized.slice(0, index));
     if (index < normalized.length) {
-      statusTypingTimer = setTimeout(step, 14);
+      statusTypingTimer = setTimeout(step, 10);
     }
   };
 
@@ -133,17 +141,77 @@ export function showToast(message, variant = 'success') {
 }
 
 export function renderExchangeStatus(status) {
-  const my = status.me;
-  const peer = status.peer || { uploaded: false, validated: false };
-  const validationState = (entry) => {
-    if (!entry.uploaded) return '✍️ Upload required';
-    return entry.validated ? '✅ Validated' : '⏳ Waiting validation';
+  if (!status) return;
+  const my = status.me || {
+    uploaded: false,
+    validated: false,
+    downloaded: false,
   };
+  const peer = status.peer || null;
 
-  const describe = (entry) =>
-    `${entry.uploaded ? '📤 Uploaded' : '📭 No upload'} • ${
-      entry.previewReady ? '👀 Preview ready' : '🛠️ Preview pending'
-    } • ${validationState(entry)}`;
+  let guidance = '';
+  let myLabel = '✍️ No file';
+  let peerLabel = 'Waiting to connect';
 
-  logStatus(`🧑 You: ${describe(my)}\n👤 Peer: ${describe(peer)} █`);
+  if (!peer) {
+    myLabel = my.uploaded ? '📤 Uploaded' : 'Ready';
+    peerLabel = 'Waiting to connect';
+    guidance = '🔗 Waiting for peer to join. Share your invite link above!';
+  } else if (
+    status.state === 'completed' ||
+    (my.downloaded && peer.downloaded)
+  ) {
+    myLabel = '⬇️ Downloaded';
+    peerLabel = '⬇️ Downloaded';
+    guidance =
+      '🎉 Exchange completed successfully! Both files have been safely retrieved.';
+  } else if (
+    status.state === 'unlocked' ||
+    (my.validated && peer.validated && my.uploaded && peer.uploaded)
+  ) {
+    myLabel = my.downloaded ? '⬇️ Downloaded' : '🔓 Unlocked';
+    peerLabel = peer.downloaded ? '⬇️ Downloaded' : '🔓 Unlocked';
+    if (my.downloaded) {
+      guidance =
+        '⬇️ You have downloaded your file. Waiting for peer to complete download...';
+    } else if (peer.downloaded) {
+      guidance =
+        '👤 Peer downloaded your file. Click DOWNLOAD to retrieve yours!';
+    } else {
+      guidance =
+        "🔓 Exchange unlocked! Click DOWNLOAD to retrieve your peer's file.";
+    }
+  } else if (my.uploaded && peer.uploaded) {
+    if (my.validated && !peer.validated) {
+      myLabel = '✅ Validated';
+      peerLabel = '⏳ Pending validation';
+      guidance =
+        '⏳ You validated! Waiting for peer to review preview and validate...';
+    } else if (!my.validated && peer.validated) {
+      myLabel = '⏳ Pending validation';
+      peerLabel = '✅ Validated';
+      guidance =
+        '👉 Peer has validated! Click PREVIEW to inspect, then VALIDATE to unlock.';
+    } else {
+      myLabel = '⏳ Ready to validate';
+      peerLabel = '⏳ Ready to validate';
+      guidance =
+        '👀 Both files uploaded! Click PREVIEW to inspect, then VALIDATE when ready.';
+    }
+  } else if (my.uploaded && !peer.uploaded) {
+    myLabel = '📤 Uploaded';
+    peerLabel = '✍️ Upload pending';
+    guidance = '📤 Your file is uploaded. Waiting for peer to upload theirs...';
+  } else if (!my.uploaded && peer.uploaded) {
+    myLabel = '✍️ Upload needed';
+    peerLabel = '📤 Uploaded';
+    guidance =
+      '👉 Peer has uploaded a file! Please select and upload your file to continue.';
+  } else {
+    myLabel = '✍️ No file';
+    peerLabel = '👤 Connected';
+    guidance = '👋 Peer joined! Both users can now select and upload a file.';
+  }
+
+  logStatus(`🧑 You: ${myLabel}  •  👤 Peer: ${peerLabel}\n${guidance} █`);
 }

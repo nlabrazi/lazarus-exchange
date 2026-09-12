@@ -72,11 +72,9 @@ input[type="file"]::file-selector-button {
 }
 
 .btn-primary {
-  background: linear-gradient(
-    120deg,
-    rgba(39, 200, 131, 0.24),
-    rgba(2, 9, 6, 0.96)
-  );
+  background: linear-gradient(120deg,
+      rgba(39, 200, 131, 0.24),
+      rgba(2, 9, 6, 0.96));
   color: var(--accent-hot);
 }
 
