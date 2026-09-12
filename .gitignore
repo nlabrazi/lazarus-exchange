@@ -10,3 +10,9 @@ build
 
 # macOS
 .DS_Store
+
+# test & runtime artifacts
+test-results/
+playwright-report/
+data/
+/api/data/

@@ -39,6 +39,16 @@ export function friendlyErrorFromApi({ status, text, json }) {
       };
     }
 
+    if (
+      message?.includes('grace period is active') ||
+      raw.includes('grace period is active')
+    ) {
+      return {
+        user: 'Reset blocked: Peer has not downloaded yet and the grace period is active.',
+        dev: { status, raw },
+      };
+    }
+
     return {
       user: 'Access denied. This session is no longer valid.',
       dev: { status, raw },
