@@ -11,13 +11,18 @@ import {
   clearSelectedFile,
   getSelectedFile,
   getShareLinkValue,
+  initDropzone,
   logStatus,
   renderExchangeStatus,
   setPreviewImage,
   setSessionIdDisplay,
   setShareLinkValue,
+  setUploadProgress,
   setUserDisplay,
   showToast,
+  updateCountdown,
+  updateSha256,
+  updateStepper,
 } from './utilities/dom.js';
 import { friendlyErrorFromApi } from './utilities/errors.js';
 import { createStatusPoller } from './utilities/poller.js';
@@ -122,8 +127,8 @@ async function copySessionLink() {
   }
 }
 
-async function upload() {
-  const file = getSelectedFile();
+async function upload(fileOverride) {
+  const file = fileOverride || getSelectedFile();
   if (!file) {
     showToast('No file selected.', 'error');
     logStatus('⚠️ No file selected █');
@@ -133,10 +138,17 @@ async function upload() {
   const formData = new FormData();
   formData.append('file', file);
 
+  setUploadProgress(0);
   const res = await authManager.runAuthedRequest('Upload', (token) =>
-    apiClient.upload(token, formData),
+    apiClient.upload(token, formData, (percent) => setUploadProgress(percent)),
   );
-  if (!res) return;
+  if (!res) {
+    setUploadProgress(null);
+    return;
+  }
+
+  setUploadProgress(100);
+  setTimeout(() => setUploadProgress(null), 1000);
 
   const data = await res.json().catch(() => null);
   if (data?.maxFileMb) {
@@ -244,6 +256,10 @@ async function resetSession() {
   await refreshSessionUi();
   clearSelectedFile();
   clearPreviewImage('Session reset. No preview loaded yet.');
+  updateStepper(null);
+  updateSha256(null, null);
+  updateCountdown(null);
+  setUploadProgress(null);
   statusPoller.resetState();
   statusPoller.scheduleSoon(500);
 
@@ -259,6 +275,9 @@ async function resetSession() {
 async function init() {
   initSessionFromUrl();
   bindPreviewImageEvents();
+  initDropzone((file) => {
+    upload(file);
+  });
 
   const ready = await authManager.ensureSessionIdentity();
   if (!ready) return;

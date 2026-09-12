@@ -51,6 +51,33 @@
         </div>
       </header>
 
+      <nav id="stepper" class="stepper" aria-label="Exchange Progress">
+        <div class="step is-active" data-step="1">
+          <span class="step-num">1</span>
+          <span class="step-label">CONNECT</span>
+        </div>
+        <div class="step-divider"></div>
+        <div class="step" data-step="2">
+          <span class="step-num">2</span>
+          <span class="step-label">UPLOAD</span>
+        </div>
+        <div class="step-divider"></div>
+        <div class="step" data-step="3">
+          <span class="step-num">3</span>
+          <span class="step-label">PREVIEW</span>
+        </div>
+        <div class="step-divider"></div>
+        <div class="step" data-step="4">
+          <span class="step-num">4</span>
+          <span class="step-label">VALIDATE</span>
+        </div>
+        <div class="step-divider"></div>
+        <div class="step" data-step="5">
+          <span class="step-num">5</span>
+          <span class="step-label">DOWNLOAD</span>
+        </div>
+      </nav>
+
       <div class="grid">
         <section class="panel panel-control">
           <div class="panel-title">
@@ -81,11 +108,35 @@
 
             <div class="control-block">
               <label class="field">Payload</label>
-              <input
-                id="fileInput"
-                type="file"
-                accept=".jpg,.jpeg,.png,.webp,.pdf,.txt,image/jpeg,image/png,image/webp,application/pdf,text/plain"
+              <div
+                id="dropzone"
+                class="dropzone"
+                tabindex="0"
+                role="button"
+                aria-label="Dropzone for file upload"
               >
+                <input
+                  id="fileInput"
+                  type="file"
+                  accept=".jpg,.jpeg,.png,.webp,.pdf,.txt,image/jpeg,image/png,image/webp,application/pdf,text/plain"
+                  hidden
+                >
+                <div class="dropzone-content">
+                  <span class="dropzone-icon">📁</span>
+                  <span id="dropzoneText" class="dropzone-text"
+                    >Drop file here or <u>browse</u></span
+                  >
+                  <span id="dropzoneInfo" class="dropzone-info"
+                    >Max 10MB • JPG, PNG, WEBP, PDF, TXT</span
+                  >
+                </div>
+              </div>
+              <div id="uploadProgress" class="progress-bar-container" hidden>
+                <div id="uploadProgressBar" class="progress-bar-fill"></div>
+                <span id="uploadProgressText" class="progress-bar-label"
+                  >0%</span
+                >
+              </div>
               <div class="actions">
                 <button class="btn btn-upload" type="button" onclick="upload()">
                   📤 UPLOAD
@@ -114,6 +165,10 @@
               ?
             </button>
           </div>
+          <div id="countdownBanner" class="countdown-banner" hidden>
+            <span class="countdown-icon">🧨</span>
+            <span id="countdownText">Auto-destruct in: 10:00</span>
+          </div>
           <section class="preview-pane" aria-live="polite">
             <img
               id="previewImage"
@@ -124,6 +179,16 @@
               No preview loaded yet.
             </p>
           </section>
+          <div class="sha256-box">
+            <div class="sha-item">
+              <span class="sha-label">MY FILE HASH:</span>
+              <code id="mySha256" class="sha-code">-</code>
+            </div>
+            <div class="sha-item">
+              <span class="sha-label">PEER FILE HASH:</span>
+              <code id="peerSha256" class="sha-code">-</code>
+            </div>
+          </div>
           <div class="unlock-box">
             <div class="panel-title unlock-title">
               <h2>Unlock</h2>
