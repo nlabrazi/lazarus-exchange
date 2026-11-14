@@ -16,7 +16,7 @@
   "devDependencies": {
     "@nlabrazi/config-biome": "^0.2.0",
     "@nlabrazi/config-playwright": "^0.1.0",
-    "concurrently": "^8.2.2",
+    "concurrently": "^10.0.0",
     "serve": "^14.2.6"
   }
 }
