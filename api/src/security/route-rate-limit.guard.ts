@@ -1,15 +1,11 @@
-import {
-  type CanActivate,
-  type ExecutionContext,
-  Injectable,
-} from '@nestjs/common';
-import { Reflector } from '@nestjs/core';
-import type { Request } from 'express';
-import type { RateLimitedRoute } from './api-rate-limit.service';
-import { ApiRateLimitService } from './api-rate-limit.service';
-import { RATE_LIMIT_ROUTE_KEY } from './rate-limit-route.decorator';
+import { type CanActivate, type ExecutionContext, Injectable } from '@nestjs/common'
+import { Reflector } from '@nestjs/core'
+import type { Request } from 'express'
+import type { RateLimitedRoute } from './api-rate-limit.service'
+import { ApiRateLimitService } from './api-rate-limit.service'
+import { RATE_LIMIT_ROUTE_KEY } from './rate-limit-route.decorator'
 
-type RateLimitedRequest = Request & { rateLimitIp?: string };
+type RateLimitedRequest = Request & { rateLimitIp?: string }
 
 @Injectable()
 export class RouteRateLimitGuard implements CanActivate {
@@ -19,13 +15,14 @@ export class RouteRateLimitGuard implements CanActivate {
   ) {}
 
   canActivate(context: ExecutionContext): boolean {
-    const route = this.reflector.getAllAndOverride<
-      RateLimitedRoute | undefined
-    >(RATE_LIMIT_ROUTE_KEY, [context.getHandler(), context.getClass()]);
-    if (!route) return true;
+    const route = this.reflector.getAllAndOverride<RateLimitedRoute | undefined>(
+      RATE_LIMIT_ROUTE_KEY,
+      [context.getHandler(), context.getClass()],
+    )
+    if (!route) return true
 
-    const request = context.switchToHttp().getRequest<RateLimitedRequest>();
-    request.rateLimitIp = this.apiRateLimitService.enforceRoute(route, request);
-    return true;
+    const request = context.switchToHttp().getRequest<RateLimitedRequest>()
+    request.rateLimitIp = this.apiRateLimitService.enforceRoute(route, request)
+    return true
   }
 }

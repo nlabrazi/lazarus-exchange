@@ -1,11 +1,11 @@
-import { HttpException, HttpStatus } from '@nestjs/common';
-import type { StorageDriver } from '../storage/storage-driver.interface';
-import { ExchangeService } from './exchange.service';
-import type { ExchangeFilePolicyService } from './exchange-file-policy.service';
-import type { ExchangePreviewService } from './exchange-preview.service';
+import { HttpException, HttpStatus } from '@nestjs/common'
+import type { StorageDriver } from '../storage/storage-driver.interface'
+import { ExchangeService } from './exchange.service'
+import type { ExchangeFilePolicyService } from './exchange-file-policy.service'
+import type { ExchangePreviewService } from './exchange-preview.service'
 
 function buildTextFile(name: string, content: string): Express.Multer.File {
-  const buffer = Buffer.from(content, 'utf8');
+  const buffer = Buffer.from(content, 'utf8')
   return {
     fieldname: 'file',
     originalname: name,
@@ -17,24 +17,19 @@ function buildTextFile(name: string, content: string): Express.Multer.File {
     destination: '',
     filename: name,
     path: '',
-  } as Express.Multer.File;
+  } as Express.Multer.File
 }
 
 describe('ExchangeService', () => {
-  let service: ExchangeService;
-  let storage: jest.Mocked<StorageDriver>;
+  let service: ExchangeService
+  let storage: jest.Mocked<StorageDriver>
   let filePolicy: jest.Mocked<
-    Pick<
-      ExchangeFilePolicyService,
-      'detectValidatedMime' | 'normalizedFileName'
-    >
-  >;
-  let previewService: jest.Mocked<
-    Pick<ExchangePreviewService, 'generatePreview'>
-  >;
+    Pick<ExchangeFilePolicyService, 'detectValidatedMime' | 'normalizedFileName'>
+  >
+  let previewService: jest.Mocked<Pick<ExchangePreviewService, 'generatePreview'>>
 
   function buildService() {
-    process.env.JWT_SECRET = 'jwt_secret_for_tests_only_12345678901234567890';
+    process.env.JWT_SECRET = 'jwt_secret_for_tests_only_12345678901234567890'
 
     storage = {
       upload: jest.fn().mockResolvedValue(undefined),
@@ -48,14 +43,12 @@ describe('ExchangeService', () => {
         bytes: Uint8Array.from(Buffer.from('peer-secret-file')),
         mimetype: 'text/plain',
       }),
-    };
+    }
 
     filePolicy = {
-      detectValidatedMime: jest
-        .fn()
-        .mockReturnValue({ mime: 'text/plain', ext: 'txt' }),
+      detectValidatedMime: jest.fn().mockReturnValue({ mime: 'text/plain', ext: 'txt' }),
       normalizedFileName: jest.fn((name: string) => `safe-${name}`),
-    };
+    }
 
     previewService = {
       generatePreview: jest.fn().mockResolvedValue({
@@ -68,30 +61,30 @@ describe('ExchangeService', () => {
           sourceKind: 'document',
         },
       }),
-    };
+    }
 
     service = new ExchangeService(
       filePolicy as unknown as ExchangeFilePolicyService,
       previewService as unknown as ExchangePreviewService,
       storage,
-    );
+    )
   }
 
   beforeEach(() => {
-    jest.restoreAllMocks();
-    buildService();
-  });
+    jest.restoreAllMocks()
+    buildService()
+  })
 
   afterEach(() => {
-    service.onModuleDestroy();
-  });
+    service.onModuleDestroy()
+  })
 
   it('should be defined', () => {
-    expect(service).toBeDefined();
-  });
+    expect(service).toBeDefined()
+  })
 
   it('creates an initial empty session state on auth_new', () => {
-    const issued = service.createSessionTokenForNewUser();
+    const issued = service.createSessionTokenForNewUser()
 
     expect(service.getStatus(issued.sessionId, issued.userId)).toEqual({
       state: 'created',
@@ -106,61 +99,59 @@ describe('ExchangeService', () => {
         previewReady: false,
       },
       peer: null,
-    });
-  });
+    })
+  })
 
   it('expires in-memory session state when the token lifetime is exceeded', () => {
-    service.onModuleDestroy();
+    service.onModuleDestroy()
 
-    process.env.JWT_TTL_SECONDS = '1';
-    const nowSpy = jest.spyOn(Date, 'now');
-    nowSpy.mockReturnValue(1_700_000_000_000);
+    process.env.JWT_TTL_SECONDS = '1'
+    const nowSpy = jest.spyOn(Date, 'now')
+    nowSpy.mockReturnValue(1_700_000_000_000)
 
-    buildService();
+    buildService()
 
-    const issued = service.createSessionTokenForNewUser();
-    expect(service.getStatus(issued.sessionId, issued.userId)).not.toBeNull();
+    const issued = service.createSessionTokenForNewUser()
+    expect(service.getStatus(issued.sessionId, issued.userId)).not.toBeNull()
 
-    nowSpy.mockReturnValue(issued.expiresAt + 1);
-    expect(service.getStatus(issued.sessionId, issued.userId)).toBeNull();
-  });
+    nowSpy.mockReturnValue(issued.expiresAt + 1)
+    expect(service.getStatus(issued.sessionId, issued.userId)).toBeNull()
+  })
 
   it('rejects validation when the current user has not uploaded a file yet', () => {
-    const issued = service.createSessionTokenForNewUser();
+    const issued = service.createSessionTokenForNewUser()
 
     try {
-      service.validate(issued.sessionId, issued.userId);
-      fail('validate should have thrown');
+      service.validate(issued.sessionId, issued.userId)
+      fail('validate should have thrown')
     } catch (error) {
-      expect(error).toBeInstanceOf(HttpException);
-      expect((error as HttpException).getStatus()).toBe(HttpStatus.BAD_REQUEST);
-      expect((error as HttpException).message).toBe(
-        'Upload a file before validating',
-      );
+      expect(error).toBeInstanceOf(HttpException)
+      expect((error as HttpException).getStatus()).toBe(HttpStatus.BAD_REQUEST)
+      expect((error as HttpException).message).toBe('Upload a file before validating')
     }
-  });
+  })
 
   it('completes a full bilateral exchange from invite to preview to download', async () => {
-    const owner = service.createSessionTokenForNewUser();
-    const invite = service.createInvite(owner.sessionId, owner.userId);
-    const peer = service.acceptInvite(invite.inviteCode);
+    const owner = service.createSessionTokenForNewUser()
+    const invite = service.createInvite(owner.sessionId, owner.userId)
+    const peer = service.acceptInvite(invite.inviteCode)
 
     const ownerUpload = await service.uploadFile(
       owner.sessionId,
       owner.userId,
       buildTextFile('owner.txt', 'owner secret'),
-    );
+    )
     const peerUpload = await service.uploadFile(
       peer.sessionId,
       peer.userId,
       buildTextFile('peer.txt', 'peer secret'),
-    );
+    )
 
-    expect(owner.sessionId).toBe(peer.sessionId);
-    expect(ownerUpload.previewStatus).toBe('ready');
-    expect(peerUpload.previewStatus).toBe('ready');
-    expect(ownerUpload.sha256).toBeDefined();
-    expect(peerUpload.sha256).toBeDefined();
+    expect(owner.sessionId).toBe(peer.sessionId)
+    expect(ownerUpload.previewStatus).toBe('ready')
+    expect(peerUpload.previewStatus).toBe('ready')
+    expect(ownerUpload.sha256).toBeDefined()
+    expect(peerUpload.sha256).toBeDefined()
 
     expect(service.getStatus(owner.sessionId, owner.userId)).toEqual({
       state: 'ready_for_validation',
@@ -182,7 +173,7 @@ describe('ExchangeService', () => {
         sha256: peerUpload.sha256,
         previewReady: true,
       },
-    });
+    })
 
     expect(service.getPreview(owner.sessionId, owner.userId)).toEqual({
       fileId: peerUpload.fileId,
@@ -198,17 +189,17 @@ describe('ExchangeService', () => {
         sizeBytes: 13,
         sourceKind: 'document',
       },
-    });
+    })
 
     const previewUrl = await service.getPreviewSignedUrl(
       owner.sessionId,
       owner.userId,
       peerUpload.fileId,
-    );
+    )
 
-    expect(previewUrl).not.toBeNull();
-    if (!previewUrl) fail('previewUrl should not be null');
-    expect(previewUrl.previewUrl).toContain('/previews%2F');
+    expect(previewUrl).not.toBeNull()
+    if (!previewUrl) fail('previewUrl should not be null')
+    expect(previewUrl.previewUrl).toContain('/previews%2F')
     expect({
       ...previewUrl,
       previewUrl: 'signed-url',
@@ -224,81 +215,71 @@ describe('ExchangeService', () => {
         sizeBytes: 13,
         sourceKind: 'document',
       },
-    });
+    })
 
-    const downloadedPeerBytes = Uint8Array.from(
-      Buffer.from('peer-secret-file'),
-    );
+    const downloadedPeerBytes = Uint8Array.from(Buffer.from('peer-secret-file'))
     storage.download.mockResolvedValueOnce({
       bytes: downloadedPeerBytes,
       mimetype: 'text/plain',
-    });
+    })
 
-    expect(service.canDownload(owner.sessionId, owner.userId)).toBe(false);
+    expect(service.canDownload(owner.sessionId, owner.userId)).toBe(false)
 
-    service.validate(owner.sessionId, owner.userId);
-    expect(service.canDownload(owner.sessionId, owner.userId)).toBe(false);
+    service.validate(owner.sessionId, owner.userId)
+    expect(service.canDownload(owner.sessionId, owner.userId)).toBe(false)
 
-    service.validate(peer.sessionId, peer.userId);
-    expect(service.canDownload(owner.sessionId, owner.userId)).toBe(true);
+    service.validate(peer.sessionId, peer.userId)
+    expect(service.canDownload(owner.sessionId, owner.userId)).toBe(true)
 
-    const statusAfterUnlock = service.getStatus(owner.sessionId, owner.userId);
-    expect(statusAfterUnlock?.state).toBe('unlocked');
-    expect(statusAfterUnlock?.unlockedAt).toBeDefined();
-    expect(statusAfterUnlock?.gracePeriodExpiresAt).toBeDefined();
+    const statusAfterUnlock = service.getStatus(owner.sessionId, owner.userId)
+    expect(statusAfterUnlock?.state).toBe('unlocked')
+    expect(statusAfterUnlock?.unlockedAt).toBeDefined()
+    expect(statusAfterUnlock?.gracePeriodExpiresAt).toBeDefined()
 
-    const download = await service.getPeerFileDownload(
-      owner.sessionId,
-      owner.userId,
-    );
+    const download = await service.getPeerFileDownload(owner.sessionId, owner.userId)
 
     expect(download).toEqual({
       originalname: 'safe-peer.txt',
       mimetype: 'text/plain',
       bytes: downloadedPeerBytes,
       sha256: peerUpload.sha256,
-    });
-    expect(storage.upload).toHaveBeenCalledTimes(4);
+    })
+    expect(storage.upload).toHaveBeenCalledTimes(4)
 
-    const statusAfterOwnerDownload = service.getStatus(
-      owner.sessionId,
-      owner.userId,
-    );
-    expect(statusAfterOwnerDownload?.me.downloaded).toBe(true);
-    expect(statusAfterOwnerDownload?.peer?.downloaded).toBe(false);
+    const statusAfterOwnerDownload = service.getStatus(owner.sessionId, owner.userId)
+    expect(statusAfterOwnerDownload?.me.downloaded).toBe(true)
+    expect(statusAfterOwnerDownload?.peer?.downloaded).toBe(false)
 
     // Anti-scam: owner tries to reset immediately before peer has downloaded owner's file -> blocked!
-    await expect(
-      service.resetSession(owner.sessionId, owner.userId),
-    ).rejects.toThrow(HttpException);
+    await expect(service.resetSession(owner.sessionId, owner.userId)).rejects.toThrow(HttpException)
 
     // Now peer downloads owner's file
-    const downloadedOwnerBytes = Uint8Array.from(Buffer.from('owner-secret'));
+    const downloadedOwnerBytes = Uint8Array.from(Buffer.from('owner-secret'))
     storage.download.mockResolvedValueOnce({
       bytes: downloadedOwnerBytes,
       mimetype: 'text/plain',
-    });
+    })
 
-    await service.getPeerFileDownload(peer.sessionId, peer.userId);
+    await service.getPeerFileDownload(peer.sessionId, peer.userId)
 
-    const statusCompleted = service.getStatus(owner.sessionId, owner.userId);
-    expect(statusCompleted?.state).toBe('completed');
-    expect(statusCompleted?.me.downloaded).toBe(true);
-    expect(statusCompleted?.peer?.downloaded).toBe(true);
+    const statusCompleted = service.getStatus(owner.sessionId, owner.userId)
+    expect(statusCompleted?.state).toBe('completed')
+    expect(statusCompleted?.me.downloaded).toBe(true)
+    expect(statusCompleted?.peer?.downloaded).toBe(true)
 
     // Now both downloaded: reset is allowed!
-    const resetOk = await service.resetSession(owner.sessionId, owner.userId);
-    expect(resetOk).toBe(true);
+    const resetOk = await service.resetSession(owner.sessionId, owner.userId)
+    expect(resetOk).toBe(true)
 
     // Peer also tries to reset right after: should succeed (session already reset)
-    const peerResetOk = await service.resetSession(peer.sessionId, peer.userId);
-    expect(peerResetOk).toBe(true);
+    const peerResetOk = await service.resetSession(peer.sessionId, peer.userId)
+    expect(peerResetOk).toBe(true)
 
     // Parsing peer's token with allowRevokedEpoch succeeds even though epoch was bumped
     const parsed = service.parseSessionToken(peer.token, {
       allowRevokedEpoch: true,
-    });
-    expect(parsed.sessionId).toBe(peer.sessionId);
-    expect(parsed.userId).toBe(peer.userId);
-  });
-});
+    })
+    expect(parsed.sessionId).toBe(peer.sessionId)
+    expect(parsed.userId).toBe(peer.userId)
+  })
+})

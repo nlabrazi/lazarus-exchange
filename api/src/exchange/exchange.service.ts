@@ -1,9 +1,4 @@
-import {
-  createHash,
-  createHmac,
-  randomBytes,
-  timingSafeEqual,
-} from 'node:crypto';
+import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 import {
   HttpException,
   HttpStatus,
@@ -11,172 +6,156 @@ import {
   Injectable,
   type MessageEvent,
   type OnModuleDestroy,
-} from '@nestjs/common';
-import { concat, Observable, of, Subject } from 'rxjs';
-import { filter, map } from 'rxjs/operators';
-import {
-  STORAGE_DRIVER,
-  type StorageDriver,
-} from '../storage/storage-driver.interface';
-import { logApiInfo, logApiWarn } from '../utils/api-logger';
-import type { PreviewMeta, SessionLifecycleState } from './exchange-file.types';
+} from '@nestjs/common'
+import { concat, Observable, of, Subject } from 'rxjs'
+import { filter, map } from 'rxjs/operators'
+import { STORAGE_DRIVER, type StorageDriver } from '../storage/storage-driver.interface'
+import { logApiInfo, logApiWarn } from '../utils/api-logger'
+import type { PreviewMeta, SessionLifecycleState } from './exchange-file.types'
 
-import { ExchangeFilePolicyService } from './exchange-file-policy.service';
-import { ExchangePreviewService } from './exchange-preview.service';
-import {
-  errorMessageFromUnknown,
-  readPositiveIntEnv,
-} from './exchange-shared.utils';
+import { ExchangeFilePolicyService } from './exchange-file-policy.service'
+import { ExchangePreviewService } from './exchange-preview.service'
+import { errorMessageFromUnknown, readPositiveIntEnv } from './exchange-shared.utils'
 
 type StoredFileMeta = {
-  fileId: string;
-  originalname: string;
-  mimetype: string;
-  extension: string;
-  size: number;
-  sha256: string;
-  originalPath: string;
-  previewPath: string;
-  previewStatus: 'ready';
-  previewMeta: PreviewMeta;
-  uploadedAt: number;
-};
+  fileId: string
+  originalname: string
+  mimetype: string
+  extension: string
+  size: number
+  sha256: string
+  originalPath: string
+  previewPath: string
+  previewStatus: 'ready'
+  previewMeta: PreviewMeta
+  uploadedAt: number
+}
 
 type FileData = {
-  file?: StoredFileMeta;
-  validated?: boolean;
-  downloaded?: boolean;
-};
+  file?: StoredFileMeta
+  validated?: boolean
+  downloaded?: boolean
+}
 
 type SessionData = {
-  users: Record<string, FileData>;
-  expiresAt: number;
-  unlockedAt?: number | null;
-  gracePeriodExpiresAt?: number | null;
-};
+  users: Record<string, FileData>
+  expiresAt: number
+  unlockedAt?: number | null
+  gracePeriodExpiresAt?: number | null
+}
 
 type DailyUsage = {
-  count: number;
-  bytes: number;
-};
+  count: number
+  bytes: number
+}
 
 type SessionIdentity = {
-  sessionId: string;
-  userId: string;
-};
+  sessionId: string
+  userId: string
+}
 
 type SessionTokenPayload = {
-  v: 1;
-  s: string;
-  u: string;
-  e: number;
-  iat: number;
-  exp: number;
-};
+  v: 1
+  s: string
+  u: string
+  e: number
+  iat: number
+  exp: number
+}
 
 type InviteData = {
-  sessionId: string;
-  creatorUserId: string;
-  expiresAt: number;
-};
+  sessionId: string
+  creatorUserId: string
+  expiresAt: number
+}
 
-const MAX_UPLOADS_PER_DAY = readPositiveIntEnv('MAX_UPLOADS_PER_DAY', 15);
-const MAX_MB_PER_DAY = readPositiveIntEnv('MAX_MB_PER_DAY', 200);
-const MAX_BYTES_PER_DAY = MAX_MB_PER_DAY * 1024 * 1024;
-const DEFAULT_JWT_TTL_SECONDS = 60 * 60 * 24 * 7;
-const DEFAULT_INVITE_TTL_SECONDS = 60 * 15;
-const DEFAULT_GRACE_PERIOD_SECONDS = 600;
-const DEFAULT_PREVIEW_URL_TTL_SECONDS = 180;
-const MIN_PREVIEW_URL_TTL_SECONDS = 60;
-const MAX_PREVIEW_URL_TTL_SECONDS = 300;
-const SESSION_CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
-const INVITE_CODE_LENGTH = 10;
-const INVITE_ALPHABET =
-  'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+const MAX_UPLOADS_PER_DAY = readPositiveIntEnv('MAX_UPLOADS_PER_DAY', 15)
+const MAX_MB_PER_DAY = readPositiveIntEnv('MAX_MB_PER_DAY', 200)
+const MAX_BYTES_PER_DAY = MAX_MB_PER_DAY * 1024 * 1024
+const DEFAULT_JWT_TTL_SECONDS = 60 * 60 * 24 * 7
+const DEFAULT_INVITE_TTL_SECONDS = 60 * 15
+const DEFAULT_GRACE_PERIOD_SECONDS = 600
+const DEFAULT_PREVIEW_URL_TTL_SECONDS = 180
+const MIN_PREVIEW_URL_TTL_SECONDS = 60
+const MAX_PREVIEW_URL_TTL_SECONDS = 300
+const SESSION_CLEANUP_INTERVAL_MS = 5 * 60 * 1000
+const INVITE_CODE_LENGTH = 10
+const INVITE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789'
 
 @Injectable()
 export class ExchangeService implements OnModuleDestroy {
-  private readonly sessions = new Map<string, SessionData>();
-  private readonly dailyUsage = new Map<string, DailyUsage>();
-  private readonly sessionEpoch = new Map<string, number>();
-  private readonly invites = new Map<string, InviteData>();
-  private readonly inviteBySession = new Map<string, string>();
-  private readonly tokenSecret: string;
-  private readonly tokenTtlSeconds: number;
-  private readonly inviteTtlSeconds: number;
-  private readonly gracePeriodMs: number;
-  private readonly previewUrlTtlSeconds: number;
-  private readonly sessionTtlMs: number;
-  private activeUsageDay = this.dayStamp(Date.now());
-  private readonly cleanupTimer: NodeJS.Timeout;
+  private readonly sessions = new Map<string, SessionData>()
+  private readonly dailyUsage = new Map<string, DailyUsage>()
+  private readonly sessionEpoch = new Map<string, number>()
+  private readonly invites = new Map<string, InviteData>()
+  private readonly inviteBySession = new Map<string, string>()
+  private readonly tokenSecret: string
+  private readonly tokenTtlSeconds: number
+  private readonly inviteTtlSeconds: number
+  private readonly gracePeriodMs: number
+  private readonly previewUrlTtlSeconds: number
+  private readonly sessionTtlMs: number
+  private activeUsageDay = this.dayStamp(Date.now())
+  private readonly cleanupTimer: NodeJS.Timeout
 
   constructor(
     private readonly filePolicy: ExchangeFilePolicyService,
     private readonly previewService: ExchangePreviewService,
     @Inject(STORAGE_DRIVER) private readonly storage: StorageDriver,
   ) {
-    const jwtSecret = (process.env.JWT_SECRET ?? '').trim();
+    const jwtSecret = (process.env.JWT_SECRET ?? '').trim()
 
     if (!jwtSecret) {
-      throw new Error(
-        'Missing JWT_SECRET in environment (use a dedicated JWT secret)',
-      );
+      throw new Error('Missing JWT_SECRET in environment (use a dedicated JWT secret)')
     }
     if (jwtSecret.length < 32) {
-      throw new Error('JWT_SECRET must be at least 32 characters long');
+      throw new Error('JWT_SECRET must be at least 32 characters long')
     }
 
-    this.tokenSecret = jwtSecret;
+    this.tokenSecret = jwtSecret
 
-    const configuredTtl = Number(
-      process.env.JWT_TTL_SECONDS ?? DEFAULT_JWT_TTL_SECONDS,
-    );
+    const configuredTtl = Number(process.env.JWT_TTL_SECONDS ?? DEFAULT_JWT_TTL_SECONDS)
     this.tokenTtlSeconds =
       Number.isFinite(configuredTtl) && configuredTtl > 0
         ? Math.floor(configuredTtl)
-        : DEFAULT_JWT_TTL_SECONDS;
+        : DEFAULT_JWT_TTL_SECONDS
 
-    const configuredInviteTtl = Number(
-      process.env.INVITE_TTL_SECONDS ?? DEFAULT_INVITE_TTL_SECONDS,
-    );
+    const configuredInviteTtl = Number(process.env.INVITE_TTL_SECONDS ?? DEFAULT_INVITE_TTL_SECONDS)
     this.inviteTtlSeconds =
       Number.isFinite(configuredInviteTtl) && configuredInviteTtl > 0
         ? Math.floor(configuredInviteTtl)
-        : DEFAULT_INVITE_TTL_SECONDS;
+        : DEFAULT_INVITE_TTL_SECONDS
 
     const configuredPreviewTtl = Number(
       process.env.PREVIEW_URL_TTL_SECONDS ?? DEFAULT_PREVIEW_URL_TTL_SECONDS,
-    );
+    )
     const safePreviewTtl =
       Number.isFinite(configuredPreviewTtl) && configuredPreviewTtl > 0
         ? Math.floor(configuredPreviewTtl)
-        : DEFAULT_PREVIEW_URL_TTL_SECONDS;
+        : DEFAULT_PREVIEW_URL_TTL_SECONDS
     this.previewUrlTtlSeconds = Math.min(
       MAX_PREVIEW_URL_TTL_SECONDS,
       Math.max(MIN_PREVIEW_URL_TTL_SECONDS, safePreviewTtl),
-    );
-    this.sessionTtlMs = this.tokenTtlSeconds * 1000;
+    )
+    this.sessionTtlMs = this.tokenTtlSeconds * 1000
 
-    const configuredGrace = readPositiveIntEnv(
-      'GRACE_PERIOD_SECONDS',
-      DEFAULT_GRACE_PERIOD_SECONDS,
-    );
-    this.gracePeriodMs = configuredGrace * 1000;
+    const configuredGrace = readPositiveIntEnv('GRACE_PERIOD_SECONDS', DEFAULT_GRACE_PERIOD_SECONDS)
+    this.gracePeriodMs = configuredGrace * 1000
 
     this.cleanupTimer = setInterval(() => {
-      this.cleanupExpiredState();
-    }, SESSION_CLEANUP_INTERVAL_MS);
-    this.cleanupTimer.unref?.();
+      this.cleanupExpiredState()
+    }, SESSION_CLEANUP_INTERVAL_MS)
+    this.cleanupTimer.unref?.()
   }
 
   private readonly sessionEvents$ = new Subject<{
-    sessionId: string;
-    type: 'status_updated' | 'session_reset';
-    timestamp: number;
-  }>();
+    sessionId: string
+    type: 'status_updated' | 'session_reset'
+    timestamp: number
+  }>()
 
   onModuleDestroy() {
-    clearInterval(this.cleanupTimer);
+    clearInterval(this.cleanupTimer)
   }
 
   emitSessionEvent(
@@ -187,18 +166,15 @@ export class ExchangeService implements OnModuleDestroy {
       sessionId,
       type,
       timestamp: Date.now(),
-    });
+    })
   }
 
-  getSessionEventStream(
-    sessionId: string,
-    userId: string,
-  ): Observable<MessageEvent> {
-    const initialStatus = this.getStatus(sessionId, userId);
+  getSessionEventStream(sessionId: string, userId: string): Observable<MessageEvent> {
+    const initialStatus = this.getStatus(sessionId, userId)
     const initial$ = of({
       data: initialStatus,
       type: 'status',
-    } as MessageEvent);
+    } as MessageEvent)
 
     const updates$ = this.sessionEvents$.pipe(
       filter((event) => event.sessionId === sessionId),
@@ -207,81 +183,79 @@ export class ExchangeService implements OnModuleDestroy {
           return {
             data: { reset: true },
             type: 'reset',
-          } as MessageEvent;
+          } as MessageEvent
         }
 
         return {
           data: this.getStatus(sessionId, userId),
           type: 'status',
-        } as MessageEvent;
+        } as MessageEvent
       }),
-    );
+    )
 
-    return concat(initial$, updates$);
+    return concat(initial$, updates$)
   }
 
   private generateId(prefix: 's' | 'u'): string {
-    return `${prefix}_${Math.random().toString(36).substring(2, 8)}`;
+    return `${prefix}_${Math.random().toString(36).substring(2, 8)}`
   }
 
   private generateInviteCode(): string {
-    const bytes = randomBytes(INVITE_CODE_LENGTH);
-    let code = '';
+    const bytes = randomBytes(INVITE_CODE_LENGTH)
+    let code = ''
     for (let i = 0; i < INVITE_CODE_LENGTH; i += 1) {
-      const idx = bytes[i] % INVITE_ALPHABET.length;
-      code += INVITE_ALPHABET[idx];
+      const idx = bytes[i] % INVITE_ALPHABET.length
+      code += INVITE_ALPHABET[idx]
     }
-    return code;
+    return code
   }
 
   private isSessionId(value: unknown): value is string {
-    return typeof value === 'string' && /^s_[a-z0-9]+$/i.test(value);
+    return typeof value === 'string' && /^s_[a-z0-9]+$/i.test(value)
   }
 
   private isUserId(value: unknown): value is string {
-    return typeof value === 'string' && /^u_[a-z0-9]+$/i.test(value);
+    return typeof value === 'string' && /^u_[a-z0-9]+$/i.test(value)
   }
 
   private base64UrlEncode(input: string): string {
-    return Buffer.from(input, 'utf8').toString('base64url');
+    return Buffer.from(input, 'utf8').toString('base64url')
   }
 
   private base64UrlDecode(input: string): string {
     try {
-      return Buffer.from(input, 'base64url').toString('utf8');
+      return Buffer.from(input, 'base64url').toString('utf8')
     } catch {
-      throw new HttpException('Invalid session token', HttpStatus.UNAUTHORIZED);
+      throw new HttpException('Invalid session token', HttpStatus.UNAUTHORIZED)
     }
   }
 
   private signature(unsignedToken: string): string {
-    return createHmac('sha256', this.tokenSecret)
-      .update(unsignedToken)
-      .digest('base64url');
+    return createHmac('sha256', this.tokenSecret).update(unsignedToken).digest('base64url')
   }
 
   private safeEqual(a: string, b: string): boolean {
-    const aBuffer = Buffer.from(a);
-    const bBuffer = Buffer.from(b);
-    if (aBuffer.length !== bBuffer.length) return false;
-    return timingSafeEqual(aBuffer, bBuffer);
+    const aBuffer = Buffer.from(a)
+    const bBuffer = Buffer.from(b)
+    if (aBuffer.length !== bBuffer.length) return false
+    return timingSafeEqual(aBuffer, bBuffer)
   }
 
   // Tokens carry a session epoch so a reset can revoke every issued token in O(1).
   private currentSessionEpoch(sessionId: string): number {
-    return this.sessionEpoch.get(sessionId) ?? 1;
+    return this.sessionEpoch.get(sessionId) ?? 1
   }
 
   private bumpSessionEpoch(sessionId: string): number {
-    const next = this.currentSessionEpoch(sessionId) + 1;
-    this.sessionEpoch.set(sessionId, next);
+    const next = this.currentSessionEpoch(sessionId) + 1
+    this.sessionEpoch.set(sessionId, next)
     logApiInfo({
       route: 'internal',
       message: 'token_epoch_bumped',
       context: ExchangeService.name,
       extra: { sessionId, epoch: next },
-    });
-    return next;
+    })
+    return next
   }
 
   private createSessionToken(
@@ -298,78 +272,76 @@ export class ExchangeService implements OnModuleDestroy {
       e: epoch,
       iat,
       exp,
-    };
+    }
 
-    const header = this.base64UrlEncode(
-      JSON.stringify({ alg: 'HS256', typ: 'JWT' }),
-    );
-    const payloadEncoded = this.base64UrlEncode(JSON.stringify(payload));
-    const unsigned = `${header}.${payloadEncoded}`;
-    const sig = this.signature(unsigned);
+    const header = this.base64UrlEncode(JSON.stringify({ alg: 'HS256', typ: 'JWT' }))
+    const payloadEncoded = this.base64UrlEncode(JSON.stringify(payload))
+    const unsigned = `${header}.${payloadEncoded}`
+    const sig = this.signature(unsigned)
 
-    return `${unsigned}.${sig}`;
+    return `${unsigned}.${sig}`
   }
 
   private createSessionInvite(sessionId: string, creatorUserId: string) {
-    this.cleanupExpiredState();
+    this.cleanupExpiredState()
 
     // Reuse an unexpired invite for the same session to reduce churn on hot UIs.
-    const currentCode = this.inviteBySession.get(sessionId);
+    const currentCode = this.inviteBySession.get(sessionId)
     if (currentCode) {
-      const currentInvite = this.invites.get(currentCode);
+      const currentInvite = this.invites.get(currentCode)
       if (currentInvite && Date.now() < currentInvite.expiresAt) {
-        return { inviteCode: currentCode, expiresAt: currentInvite.expiresAt };
+        return { inviteCode: currentCode, expiresAt: currentInvite.expiresAt }
       }
-      this.removeInvite(currentCode);
+      this.removeInvite(currentCode)
     }
 
-    let inviteCode = this.generateInviteCode();
+    let inviteCode = this.generateInviteCode()
     while (this.invites.has(inviteCode)) {
-      inviteCode = this.generateInviteCode();
+      inviteCode = this.generateInviteCode()
     }
 
-    const nowSec = Math.floor(Date.now() / 1000);
-    const expiresAt = (nowSec + this.inviteTtlSeconds) * 1000;
+    const nowSec = Math.floor(Date.now() / 1000)
+    const expiresAt = (nowSec + this.inviteTtlSeconds) * 1000
 
-    this.invites.set(inviteCode, { sessionId, creatorUserId, expiresAt });
-    this.inviteBySession.set(sessionId, inviteCode);
+    this.invites.set(inviteCode, { sessionId, creatorUserId, expiresAt })
+    this.inviteBySession.set(sessionId, inviteCode)
 
     logApiInfo({
       route: 'internal',
       message: 'invite_created',
       context: ExchangeService.name,
       extra: { sessionId, creatorUserId },
-    });
+    })
 
-    return { inviteCode, expiresAt };
+    return { inviteCode, expiresAt }
   }
 
   private revokeSessionInvite(sessionId: string): void {
-    const inviteCode = this.inviteBySession.get(sessionId);
-    if (!inviteCode) return;
-    this.removeInvite(inviteCode);
+    const inviteCode = this.inviteBySession.get(sessionId)
+    if (!inviteCode) return
+    this.removeInvite(inviteCode)
     logApiInfo({
       route: 'internal',
       message: 'invite_revoked',
       context: ExchangeService.name,
       extra: { sessionId },
-    });
+    })
   }
 
   private removeInvite(inviteCode: string): void {
-    const invite = this.invites.get(inviteCode);
-    if (!invite) return;
+    const invite = this.invites.get(inviteCode)
+    if (!invite) return
 
-    this.invites.delete(inviteCode);
+    this.invites.delete(inviteCode)
     if (this.inviteBySession.get(invite.sessionId) === inviteCode) {
-      this.inviteBySession.delete(invite.sessionId);
+      this.inviteBySession.delete(invite.sessionId)
     }
   }
 
   private cleanupExpiredInvites(nowMs: number): void {
     for (const [inviteCode, invite] of this.invites.entries()) {
-      if (nowMs < invite.expiresAt) continue;
-      this.removeInvite(inviteCode);
+      if (nowMs < invite.expiresAt) continue
+      this.removeInvite(inviteCode)
       logApiInfo({
         route: 'internal',
         message: 'invite_expired',
@@ -378,37 +350,35 @@ export class ExchangeService implements OnModuleDestroy {
           sessionId: invite.sessionId,
           creatorUserId: invite.creatorUserId,
         },
-      });
+      })
     }
   }
 
   private cleanupExpiredState(nowMs = Date.now()): void {
-    this.rotateDailyUsageBuckets(nowMs);
-    this.cleanupExpiredInvites(nowMs);
+    this.rotateDailyUsageBuckets(nowMs)
+    this.cleanupExpiredInvites(nowMs)
 
-    const expiredPaths: string[] = [];
+    const expiredPaths: string[] = []
     for (const [sessionId, session] of this.sessions.entries()) {
-      if (nowMs < session.expiresAt) continue;
+      if (nowMs < session.expiresAt) continue
 
       for (const userId in session.users) {
-        expiredPaths.push(
-          ...this.storagePathsForFile(session.users[userId]?.file),
-        );
+        expiredPaths.push(...this.storagePathsForFile(session.users[userId]?.file))
       }
 
-      this.sessions.delete(sessionId);
-      this.sessionEpoch.delete(sessionId);
-      this.revokeSessionInvite(sessionId);
+      this.sessions.delete(sessionId)
+      this.sessionEpoch.delete(sessionId)
+      this.revokeSessionInvite(sessionId)
       logApiInfo({
         route: 'internal',
         message: 'session_expired',
         context: ExchangeService.name,
         extra: { sessionId },
-      });
+      })
     }
 
     if (expiredPaths.length > 0) {
-      void this.removePathsQuietly(expiredPaths);
+      void this.removePathsQuietly(expiredPaths)
     }
   }
 
@@ -417,60 +387,50 @@ export class ExchangeService implements OnModuleDestroy {
     userId: string,
     reason: string,
   ): SessionIdentity & { token: string; expiresAt: number } {
-    const nowSec = Math.floor(Date.now() / 1000);
-    const exp = nowSec + this.tokenTtlSeconds;
-    const epoch = this.currentSessionEpoch(sessionId);
-    const token = this.createSessionToken(
-      sessionId,
-      userId,
-      epoch,
-      nowSec,
-      exp,
-    );
+    const nowSec = Math.floor(Date.now() / 1000)
+    const exp = nowSec + this.tokenTtlSeconds
+    const epoch = this.currentSessionEpoch(sessionId)
+    const token = this.createSessionToken(sessionId, userId, epoch, nowSec, exp)
 
     logApiInfo({
       route: 'internal',
       message: 'token_issued',
       context: ExchangeService.name,
       extra: { sessionId, userId, epoch, reason },
-    });
+    })
 
-    return { sessionId, userId, token, expiresAt: exp * 1000 };
+    return { sessionId, userId, token, expiresAt: exp * 1000 }
   }
 
   private parsePayload(payloadEncoded: string): SessionTokenPayload {
-    let payload: unknown = null;
+    let payload: unknown = null
     try {
-      payload = JSON.parse(this.base64UrlDecode(payloadEncoded));
+      payload = JSON.parse(this.base64UrlDecode(payloadEncoded))
     } catch {
-      throw new HttpException('Invalid session token', HttpStatus.UNAUTHORIZED);
+      throw new HttpException('Invalid session token', HttpStatus.UNAUTHORIZED)
     }
 
     if (!payload || typeof payload !== 'object') {
-      throw new HttpException('Invalid session token', HttpStatus.UNAUTHORIZED);
+      throw new HttpException('Invalid session token', HttpStatus.UNAUTHORIZED)
     }
 
-    const candidate = payload as Partial<SessionTokenPayload>;
-    const nowSec = Math.floor(Date.now() / 1000);
+    const candidate = payload as Partial<SessionTokenPayload>
+    const nowSec = Math.floor(Date.now() / 1000)
 
     if (candidate.v !== 1) {
-      throw new HttpException('Invalid session token', HttpStatus.UNAUTHORIZED);
+      throw new HttpException('Invalid session token', HttpStatus.UNAUTHORIZED)
     }
     if (!this.isSessionId(candidate.s) || !this.isUserId(candidate.u)) {
-      throw new HttpException('Invalid session token', HttpStatus.UNAUTHORIZED);
+      throw new HttpException('Invalid session token', HttpStatus.UNAUTHORIZED)
     }
-    if (
-      typeof candidate.e !== 'number' ||
-      !Number.isInteger(candidate.e) ||
-      candidate.e < 1
-    ) {
-      throw new HttpException('Invalid session token', HttpStatus.UNAUTHORIZED);
+    if (typeof candidate.e !== 'number' || !Number.isInteger(candidate.e) || candidate.e < 1) {
+      throw new HttpException('Invalid session token', HttpStatus.UNAUTHORIZED)
     }
     if (typeof candidate.exp !== 'number' || nowSec >= candidate.exp) {
-      throw new HttpException('Session token expired', HttpStatus.UNAUTHORIZED);
+      throw new HttpException('Session token expired', HttpStatus.UNAUTHORIZED)
     }
     if (typeof candidate.iat !== 'number' || candidate.iat > nowSec + 60) {
-      throw new HttpException('Invalid session token', HttpStatus.UNAUTHORIZED);
+      throw new HttpException('Invalid session token', HttpStatus.UNAUTHORIZED)
     }
 
     return {
@@ -480,31 +440,28 @@ export class ExchangeService implements OnModuleDestroy {
       e: candidate.e,
       iat: candidate.iat,
       exp: candidate.exp,
-    };
+    }
   }
 
-  parseSessionToken(
-    token: string,
-    options?: { allowRevokedEpoch?: boolean },
-  ): SessionIdentity {
-    const parts = token.split('.');
+  parseSessionToken(token: string, options?: { allowRevokedEpoch?: boolean }): SessionIdentity {
+    const parts = token.split('.')
     if (parts.length !== 3 || !parts[0] || !parts[1] || !parts[2]) {
-      throw new HttpException('Invalid session token', HttpStatus.UNAUTHORIZED);
+      throw new HttpException('Invalid session token', HttpStatus.UNAUTHORIZED)
     }
 
-    const [headerEncoded, payloadEncoded, signature] = parts;
-    const unsigned = `${headerEncoded}.${payloadEncoded}`;
-    const expectedSignature = this.signature(unsigned);
+    const [headerEncoded, payloadEncoded, signature] = parts
+    const unsigned = `${headerEncoded}.${payloadEncoded}`
+    const expectedSignature = this.signature(unsigned)
 
     if (!this.safeEqual(expectedSignature, signature)) {
-      throw new HttpException('Invalid session token', HttpStatus.UNAUTHORIZED);
+      throw new HttpException('Invalid session token', HttpStatus.UNAUTHORIZED)
     }
 
-    let header: unknown = null;
+    let header: unknown = null
     try {
-      header = JSON.parse(this.base64UrlDecode(headerEncoded));
+      header = JSON.parse(this.base64UrlDecode(headerEncoded))
     } catch {
-      throw new HttpException('Invalid session token', HttpStatus.UNAUTHORIZED);
+      throw new HttpException('Invalid session token', HttpStatus.UNAUTHORIZED)
     }
 
     if (
@@ -513,90 +470,76 @@ export class ExchangeService implements OnModuleDestroy {
       (header as { alg?: string }).alg !== 'HS256' ||
       (header as { typ?: string }).typ !== 'JWT'
     ) {
-      throw new HttpException('Invalid session token', HttpStatus.UNAUTHORIZED);
+      throw new HttpException('Invalid session token', HttpStatus.UNAUTHORIZED)
     }
 
-    const payload = this.parsePayload(payloadEncoded);
-    if (
-      !options?.allowRevokedEpoch &&
-      payload.e !== this.currentSessionEpoch(payload.s)
-    ) {
-      throw new HttpException('Session token revoked', HttpStatus.UNAUTHORIZED);
+    const payload = this.parsePayload(payloadEncoded)
+    if (!options?.allowRevokedEpoch && payload.e !== this.currentSessionEpoch(payload.s)) {
+      throw new HttpException('Session token revoked', HttpStatus.UNAUTHORIZED)
     }
 
-    return { sessionId: payload.s, userId: payload.u };
+    return { sessionId: payload.s, userId: payload.u }
   }
 
   createSessionTokenForNewUser(): SessionIdentity & {
-    token: string;
-    expiresAt: number;
+    token: string
+    expiresAt: number
   } {
-    this.cleanupExpiredState();
-    const sessionId = this.generateId('s');
-    const userId = this.generateId('u');
-    const issued = this.issueSessionToken(sessionId, userId, 'auth_new');
-    const session = this.getOrCreateSession(sessionId, issued.expiresAt);
-    session.users[userId] = session.users[userId] ?? {};
-    return issued;
+    this.cleanupExpiredState()
+    const sessionId = this.generateId('s')
+    const userId = this.generateId('u')
+    const issued = this.issueSessionToken(sessionId, userId, 'auth_new')
+    const session = this.getOrCreateSession(sessionId, issued.expiresAt)
+    session.users[userId] = session.users[userId] ?? {}
+    return issued
   }
 
   createInvite(
     sessionId: string,
     userId: string,
   ): {
-    inviteCode: string;
-    expiresAt: number;
+    inviteCode: string
+    expiresAt: number
   } {
-    this.cleanupExpiredState();
-    const session = this.getOrCreateSession(sessionId);
-    session.users[userId] = session.users[userId] ?? {};
-    return this.createSessionInvite(sessionId, userId);
+    this.cleanupExpiredState()
+    const session = this.getOrCreateSession(sessionId)
+    session.users[userId] = session.users[userId] ?? {}
+    return this.createSessionInvite(sessionId, userId)
   }
 
-  acceptInvite(
-    inviteCode: string,
-  ): SessionIdentity & { token: string; expiresAt: number } {
-    this.cleanupExpiredState();
+  acceptInvite(inviteCode: string): SessionIdentity & { token: string; expiresAt: number } {
+    this.cleanupExpiredState()
 
-    const invite = this.invites.get(inviteCode);
+    const invite = this.invites.get(inviteCode)
     if (!invite) {
-      throw new HttpException(
-        'Invite link is invalid or expired',
-        HttpStatus.GONE,
-      );
+      throw new HttpException('Invite link is invalid or expired', HttpStatus.GONE)
     }
 
-    const nowMs = Date.now();
+    const nowMs = Date.now()
     if (nowMs >= invite.expiresAt) {
-      this.removeInvite(inviteCode);
-      throw new HttpException(
-        'Invite link is invalid or expired',
-        HttpStatus.GONE,
-      );
+      this.removeInvite(inviteCode)
+      throw new HttpException('Invite link is invalid or expired', HttpStatus.GONE)
     }
 
-    const session = this.getOrCreateSession(invite.sessionId);
-    let hasPeerAlready = false;
+    const session = this.getOrCreateSession(invite.sessionId)
+    let hasPeerAlready = false
     for (const existingUserId in session.users) {
       if (existingUserId !== invite.creatorUserId) {
-        hasPeerAlready = true;
-        break;
+        hasPeerAlready = true
+        break
       }
     }
     if (hasPeerAlready) {
-      throw new HttpException(
-        'Session already has a peer',
-        HttpStatus.CONFLICT,
-      );
+      throw new HttpException('Session already has a peer', HttpStatus.CONFLICT)
     }
 
-    let userId = this.generateId('u');
+    let userId = this.generateId('u')
     while (session.users[userId] || userId === invite.creatorUserId) {
-      userId = this.generateId('u');
+      userId = this.generateId('u')
     }
 
-    session.users[userId] = session.users[userId] ?? {};
-    this.removeInvite(inviteCode);
+    session.users[userId] = session.users[userId] ?? {}
+    this.removeInvite(inviteCode)
     logApiInfo({
       route: 'internal',
       message: 'invite_accepted',
@@ -606,134 +549,126 @@ export class ExchangeService implements OnModuleDestroy {
         creatorUserId: invite.creatorUserId,
         userId,
       },
-    });
+    })
 
-    const issued = this.issueSessionToken(
-      invite.sessionId,
-      userId,
-      'invite_accept',
-    );
-    this.getOrCreateSession(invite.sessionId, issued.expiresAt);
-    this.emitSessionEvent(invite.sessionId);
-    return issued;
+    const issued = this.issueSessionToken(invite.sessionId, userId, 'invite_accept')
+    this.getOrCreateSession(invite.sessionId, issued.expiresAt)
+    this.emitSessionEvent(invite.sessionId)
+    return issued
   }
 
   private usageKey(userId: string): string {
-    return `${this.activeUsageDay}:${userId}`;
+    return `${this.activeUsageDay}:${userId}`
   }
 
   private dayStamp(nowMs: number): string {
-    const d = new Date(nowMs);
-    const yyyy = d.getUTCFullYear();
-    const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
-    const dd = String(d.getUTCDate()).padStart(2, '0');
-    return `${yyyy}-${mm}-${dd}`;
+    const d = new Date(nowMs)
+    const yyyy = d.getUTCFullYear()
+    const mm = String(d.getUTCMonth() + 1).padStart(2, '0')
+    const dd = String(d.getUTCDate()).padStart(2, '0')
+    return `${yyyy}-${mm}-${dd}`
   }
 
   private rotateDailyUsageBuckets(nowMs: number): void {
-    const currentDay = this.dayStamp(nowMs);
-    if (currentDay === this.activeUsageDay) return;
+    const currentDay = this.dayStamp(nowMs)
+    if (currentDay === this.activeUsageDay) return
 
-    this.activeUsageDay = currentDay;
-    this.dailyUsage.clear();
+    this.activeUsageDay = currentDay
+    this.dailyUsage.clear()
   }
 
   private enforceDailyLimits(userId: string, sizeBytes: number): void {
-    this.rotateDailyUsageBuckets(Date.now());
-    const key = this.usageKey(userId);
-    const usage = this.dailyUsage.get(key) ?? { count: 0, bytes: 0 };
+    this.rotateDailyUsageBuckets(Date.now())
+    const key = this.usageKey(userId)
+    const usage = this.dailyUsage.get(key) ?? { count: 0, bytes: 0 }
 
     if (usage.count + 1 > MAX_UPLOADS_PER_DAY) {
       throw new HttpException(
         `Daily upload limit reached (${MAX_UPLOADS_PER_DAY}/day)`,
         HttpStatus.TOO_MANY_REQUESTS,
-      );
+      )
     }
 
     if (usage.bytes + sizeBytes > MAX_BYTES_PER_DAY) {
       throw new HttpException(
         `Daily bandwidth limit reached (${MAX_MB_PER_DAY}MB/day)`,
         HttpStatus.TOO_MANY_REQUESTS,
-      );
+      )
     }
 
-    usage.count += 1;
-    usage.bytes += sizeBytes;
-    this.dailyUsage.set(key, usage);
+    usage.count += 1
+    usage.bytes += sizeBytes
+    this.dailyUsage.set(key, usage)
   }
 
   private getOrCreateSession(
     sessionId: string,
     expiresAt = Date.now() + this.sessionTtlMs,
   ): SessionData {
-    let session = this.sessions.get(sessionId);
+    let session = this.sessions.get(sessionId)
     if (!session) {
-      session = { users: {}, expiresAt };
-      this.sessions.set(sessionId, session);
-      return session;
+      session = { users: {}, expiresAt }
+      this.sessions.set(sessionId, session)
+      return session
     }
 
     if (expiresAt > session.expiresAt) {
-      session.expiresAt = expiresAt;
+      session.expiresAt = expiresAt
     }
 
-    return session;
+    return session
   }
 
   private getPeerId(sessionId: string, userId: string): string | null {
-    const session = this.sessions.get(sessionId);
-    if (!session) return null;
+    const session = this.sessions.get(sessionId)
+    if (!session) return null
     // Polling calls this often: iterate once without allocating temporary arrays.
     for (const id in session.users) {
-      if (id !== userId) return id;
+      if (id !== userId) return id
     }
-    return null;
+    return null
   }
 
   private generateFileId(): string {
-    return `f_${randomBytes(9).toString('base64url')}`;
+    return `f_${randomBytes(9).toString('base64url')}`
   }
 
   private isFileId(value: string): boolean {
-    return /^f_[A-Za-z0-9_-]{8,32}$/.test(value);
+    return /^f_[A-Za-z0-9_-]{8,32}$/.test(value)
   }
 
-  private buildOriginalPath(
-    sessionId: string,
-    fileId: string,
-    extension: string,
-  ): string {
-    return `originals/${sessionId}/${fileId}.${extension}`;
+  private buildOriginalPath(sessionId: string, fileId: string, extension: string): string {
+    return `originals/${sessionId}/${fileId}.${extension}`
   }
 
   private buildPreviewPath(sessionId: string, fileId: string): string {
-    return `previews/${sessionId}/${fileId}.webp`;
+    return `previews/${sessionId}/${fileId}.webp`
   }
 
   private storagePathsForFile(file?: StoredFileMeta): string[] {
-    if (!file) return [];
-    return [file.originalPath, file.previewPath].filter(Boolean);
+    if (!file) return []
+    return [file.originalPath, file.previewPath].filter(Boolean)
   }
 
   private async removePaths(paths: string[]): Promise<void> {
-    const unique = [...new Set(paths.filter(Boolean))];
-    if (unique.length === 0) return;
-    await this.storage.remove(unique);
+    const unique = [...new Set(paths.filter(Boolean))]
+    if (unique.length === 0) return
+    await this.storage.remove(unique)
   }
 
   private async removePathsQuietly(paths: string[]): Promise<void> {
-    const unique = [...new Set(paths.filter(Boolean))];
-    if (unique.length === 0) return;
+    const unique = [...new Set(paths.filter(Boolean))]
+    if (unique.length === 0) return
 
     try {
-      await this.storage.remove(unique);
+      await this.storage.remove(unique)
     } catch (error) {
       logApiWarn({
         route: 'internal',
         message: 'storage_remove_failed',
         context: ExchangeService.name,
         extra: { paths: unique.length, error: errorMessageFromUnknown(error) },
-      });
+      })
     }
   }
 
@@ -742,42 +677,34 @@ export class ExchangeService implements OnModuleDestroy {
     userId: string,
     file: Express.Multer.File,
   ): Promise<{
-    fileId: string;
-    sha256: string;
-    previewStatus: 'ready';
-    previewMeta: PreviewMeta;
+    fileId: string
+    sha256: string
+    previewStatus: 'ready'
+    previewMeta: PreviewMeta
   }> {
-    this.cleanupExpiredState();
-    this.enforceDailyLimits(userId, file.size);
+    this.cleanupExpiredState()
+    this.enforceDailyLimits(userId, file.size)
 
-    const session = this.getOrCreateSession(sessionId);
-    session.users[userId] = session.users[userId] ?? {};
-    const previousFile = session.users[userId].file;
-    const validatedMime = this.filePolicy.detectValidatedMime(file);
+    const session = this.getOrCreateSession(sessionId)
+    session.users[userId] = session.users[userId] ?? {}
+    const previousFile = session.users[userId].file
+    const validatedMime = this.filePolicy.detectValidatedMime(file)
 
-    const fileId = this.generateFileId();
-    const sha256 = createHash('sha256').update(file.buffer).digest('hex');
-    const originalPath = this.buildOriginalPath(
-      sessionId,
-      fileId,
-      validatedMime.ext,
-    );
-    const previewPath = this.buildPreviewPath(sessionId, fileId);
-    const safeName = this.filePolicy.normalizedFileName(file.originalname);
-    const uploadedPaths: string[] = [];
+    const fileId = this.generateFileId()
+    const sha256 = createHash('sha256').update(file.buffer).digest('hex')
+    const originalPath = this.buildOriginalPath(sessionId, fileId, validatedMime.ext)
+    const previewPath = this.buildPreviewPath(sessionId, fileId)
+    const safeName = this.filePolicy.normalizedFileName(file.originalname)
+    const uploadedPaths: string[] = []
 
     try {
-      await this.storage.upload(originalPath, file.buffer, validatedMime.mime);
-      uploadedPaths.push(originalPath);
+      await this.storage.upload(originalPath, file.buffer, validatedMime.mime)
+      uploadedPaths.push(originalPath)
 
-      const preview = await this.previewService.generatePreview(
-        file,
-        validatedMime,
-        safeName,
-      );
+      const preview = await this.previewService.generatePreview(file, validatedMime, safeName)
 
-      await this.storage.upload(previewPath, preview.bytes, 'image/webp');
-      uploadedPaths.push(previewPath);
+      await this.storage.upload(previewPath, preview.bytes, 'image/webp')
+      uploadedPaths.push(previewPath)
 
       session.users[userId].file = {
         fileId,
@@ -791,66 +718,64 @@ export class ExchangeService implements OnModuleDestroy {
         previewStatus: 'ready',
         previewMeta: preview.meta,
         uploadedAt: Date.now(),
-      };
-      session.users[userId].validated = false;
-      session.users[userId].downloaded = false;
-      session.unlockedAt = null;
-      session.gracePeriodExpiresAt = null;
+      }
+      session.users[userId].validated = false
+      session.users[userId].downloaded = false
+      session.unlockedAt = null
+      session.gracePeriodExpiresAt = null
 
-      await this.removePathsQuietly(this.storagePathsForFile(previousFile));
-      this.emitSessionEvent(sessionId);
+      await this.removePathsQuietly(this.storagePathsForFile(previousFile))
+      this.emitSessionEvent(sessionId)
       return {
         fileId,
         sha256,
         previewStatus: 'ready',
         previewMeta: preview.meta,
-      };
+      }
     } catch (error) {
-      await this.removePathsQuietly(uploadedPaths);
-      if (error instanceof HttpException) throw error;
+      await this.removePathsQuietly(uploadedPaths)
+      if (error instanceof HttpException) throw error
       throw new HttpException(
         `Upload failed: ${errorMessageFromUnknown(error)}`,
         HttpStatus.BAD_GATEWAY,
-      );
+      )
     }
   }
 
   resolveSessionState(sessionId: string): SessionLifecycleState {
-    const session = this.sessions.get(sessionId);
-    if (!session) return 'expired';
-    if (Date.now() >= session.expiresAt) return 'expired';
+    const session = this.sessions.get(sessionId)
+    if (!session) return 'expired'
+    if (Date.now() >= session.expiresAt) return 'expired'
 
-    const userIds = Object.keys(session.users);
-    if (userIds.length < 2) return 'created';
+    const userIds = Object.keys(session.users)
+    if (userIds.length < 2) return 'created'
 
-    const u1 = session.users[userIds[0]];
-    const u2 = session.users[userIds[1]];
+    const u1 = session.users[userIds[0]]
+    const u2 = session.users[userIds[1]]
 
-    const bothDownloaded = Boolean(u1?.downloaded && u2?.downloaded);
-    if (bothDownloaded) return 'completed';
+    const bothDownloaded = Boolean(u1?.downloaded && u2?.downloaded)
+    if (bothDownloaded) return 'completed'
 
-    const bothValidated = Boolean(
-      u1?.validated && u1?.file && u2?.validated && u2?.file,
-    );
-    if (bothValidated) return 'unlocked';
+    const bothValidated = Boolean(u1?.validated && u1?.file && u2?.validated && u2?.file)
+    if (bothValidated) return 'unlocked'
 
-    const bothUploaded = Boolean(u1?.file && u2?.file);
-    if (bothUploaded) return 'ready_for_validation';
+    const bothUploaded = Boolean(u1?.file && u2?.file)
+    if (bothUploaded) return 'ready_for_validation'
 
-    const anyUploaded = Boolean(u1?.file || u2?.file);
-    if (anyUploaded) return 'uploading';
+    const anyUploaded = Boolean(u1?.file || u2?.file)
+    if (anyUploaded) return 'uploading'
 
-    return 'paired';
+    return 'paired'
   }
 
   getStatus(sessionId: string, userId: string) {
-    this.cleanupExpiredState();
-    const session = this.sessions.get(sessionId);
-    if (!session?.users[userId]) return null;
+    this.cleanupExpiredState()
+    const session = this.sessions.get(sessionId)
+    if (!session?.users[userId]) return null
 
-    const me = session.users[userId];
-    const peerId = this.getPeerId(sessionId, userId);
-    const peer = peerId ? session.users[peerId] : null;
+    const me = session.users[userId]
+    const peerId = this.getPeerId(sessionId, userId)
+    const peer = peerId ? session.users[peerId] : null
 
     return {
       state: this.resolveSessionState(sessionId),
@@ -874,18 +799,18 @@ export class ExchangeService implements OnModuleDestroy {
             previewReady: peer.file?.previewStatus === 'ready',
           }
         : null,
-    };
+    }
   }
 
   getPreview(sessionId: string, userId: string) {
-    this.cleanupExpiredState();
-    const session = this.sessions.get(sessionId);
-    if (!session) return null;
+    this.cleanupExpiredState()
+    const session = this.sessions.get(sessionId)
+    if (!session) return null
 
-    const peerId = this.getPeerId(sessionId, userId);
-    const peer = peerId ? session.users[peerId] : null;
-    const meta = peer?.file;
-    if (!meta) return null;
+    const peerId = this.getPeerId(sessionId, userId)
+    const peer = peerId ? session.users[peerId] : null
+    const meta = peer?.file
+    if (!meta) return null
 
     return {
       fileId: meta.fileId,
@@ -895,7 +820,7 @@ export class ExchangeService implements OnModuleDestroy {
       sha256: meta.sha256,
       previewStatus: meta.previewStatus,
       previewMeta: meta.previewMeta,
-    };
+    }
   }
 
   async getPreviewSignedUrl(
@@ -903,33 +828,33 @@ export class ExchangeService implements OnModuleDestroy {
     userId: string,
     fileId: string,
   ): Promise<{
-    fileId: string;
-    previewStatus: 'ready';
-    previewUrl: string;
-    expiresIn: number;
-    previewMeta: PreviewMeta;
+    fileId: string
+    previewStatus: 'ready'
+    previewUrl: string
+    expiresIn: number
+    previewMeta: PreviewMeta
   } | null> {
-    this.cleanupExpiredState();
+    this.cleanupExpiredState()
     if (!this.isFileId(fileId)) {
-      throw new HttpException('Invalid file id', HttpStatus.BAD_REQUEST);
+      throw new HttpException('Invalid file id', HttpStatus.BAD_REQUEST)
     }
 
-    const session = this.sessions.get(sessionId);
-    if (!session?.users[userId]) return null;
+    const session = this.sessions.get(sessionId)
+    if (!session?.users[userId]) return null
 
-    const peerId = this.getPeerId(sessionId, userId);
-    if (!peerId) return null;
+    const peerId = this.getPeerId(sessionId, userId)
+    if (!peerId) return null
 
-    const peerFile = session.users[peerId]?.file;
-    if (!peerFile || peerFile.fileId !== fileId) return null;
+    const peerFile = session.users[peerId]?.file
+    if (!peerFile || peerFile.fileId !== fileId) return null
     if (peerFile.previewStatus !== 'ready' || !peerFile.previewPath) {
-      throw new HttpException('Preview is not ready yet', HttpStatus.CONFLICT);
+      throw new HttpException('Preview is not ready yet', HttpStatus.CONFLICT)
     }
 
     const signedUrl = await this.storage.createSignedUrl(
       peerFile.previewPath,
       this.previewUrlTtlSeconds,
-    );
+    )
 
     return {
       fileId: peerFile.fileId,
@@ -937,34 +862,31 @@ export class ExchangeService implements OnModuleDestroy {
       previewUrl: signedUrl,
       expiresIn: this.previewUrlTtlSeconds,
       previewMeta: peerFile.previewMeta,
-    };
+    }
   }
 
   validate(sessionId: string, userId: string) {
-    this.cleanupExpiredState();
-    const session = this.sessions.get(sessionId);
-    const currentUser = session?.users[userId];
+    this.cleanupExpiredState()
+    const session = this.sessions.get(sessionId)
+    const currentUser = session?.users[userId]
 
     if (!session || !currentUser) {
-      throw new HttpException('Session not found', HttpStatus.NOT_FOUND);
+      throw new HttpException('Session not found', HttpStatus.NOT_FOUND)
     }
 
     if (!currentUser.file) {
-      throw new HttpException(
-        'Upload a file before validating',
-        HttpStatus.BAD_REQUEST,
-      );
+      throw new HttpException('Upload a file before validating', HttpStatus.BAD_REQUEST)
     }
 
-    session.users[userId].validated = true;
+    session.users[userId].validated = true
 
-    const peerId = this.getPeerId(sessionId, userId);
-    const peer = peerId ? session.users[peerId] : null;
+    const peerId = this.getPeerId(sessionId, userId)
+    const peer = peerId ? session.users[peerId] : null
 
     if (peer?.validated && peer?.file) {
       if (!session.unlockedAt) {
-        session.unlockedAt = Date.now();
-        session.gracePeriodExpiresAt = Date.now() + this.gracePeriodMs;
+        session.unlockedAt = Date.now()
+        session.gracePeriodExpiresAt = Date.now() + this.gracePeriodMs
         logApiInfo({
           route: 'internal',
           message: 'exchange_unlocked',
@@ -973,56 +895,56 @@ export class ExchangeService implements OnModuleDestroy {
             sessionId,
             gracePeriodExpiresAt: session.gracePeriodExpiresAt,
           },
-        });
+        })
       }
     }
 
-    this.emitSessionEvent(sessionId);
-    return true;
+    this.emitSessionEvent(sessionId)
+    return true
   }
 
   canDownload(sessionId: string, userId: string): boolean {
-    this.cleanupExpiredState();
-    const session = this.sessions.get(sessionId);
-    if (!session?.users[userId]) return false;
+    this.cleanupExpiredState()
+    const session = this.sessions.get(sessionId)
+    if (!session?.users[userId]) return false
 
-    const peerId = this.getPeerId(sessionId, userId);
-    if (!peerId) return false;
+    const peerId = this.getPeerId(sessionId, userId)
+    if (!peerId) return false
 
-    const me = session.users[userId];
-    const peer = session.users[peerId];
+    const me = session.users[userId]
+    const peer = session.users[peerId]
 
-    return Boolean(me.validated && me.file && peer.validated && peer.file);
+    return Boolean(me.validated && me.file && peer.validated && peer.file)
   }
 
   async getPeerFileDownload(
     sessionId: string,
     userId: string,
   ): Promise<{
-    originalname: string;
-    mimetype: string;
-    bytes: Uint8Array;
-    sha256: string;
+    originalname: string
+    mimetype: string
+    bytes: Uint8Array
+    sha256: string
   } | null> {
-    this.cleanupExpiredState();
-    const session = this.sessions.get(sessionId);
-    if (!session?.users[userId]) return null;
+    this.cleanupExpiredState()
+    const session = this.sessions.get(sessionId)
+    if (!session?.users[userId]) return null
 
-    const peerId = this.getPeerId(sessionId, userId);
-    if (!peerId) return null;
+    const peerId = this.getPeerId(sessionId, userId)
+    if (!peerId) return null
 
-    const meta = session.users[peerId]?.file;
-    if (!meta) return null;
+    const meta = session.users[peerId]?.file
+    if (!meta) return null
 
-    const downloaded = await this.storage.download(meta.originalPath);
+    const downloaded = await this.storage.download(meta.originalPath)
 
-    session.users[userId].downloaded = true;
+    session.users[userId].downloaded = true
     logApiInfo({
       route: 'internal',
       message: 'file_downloaded',
       context: ExchangeService.name,
       extra: { sessionId, userId, fileId: meta.fileId },
-    });
+    })
 
     if (session.users[peerId]?.downloaded) {
       logApiInfo({
@@ -1030,77 +952,71 @@ export class ExchangeService implements OnModuleDestroy {
         message: 'exchange_completed',
         context: ExchangeService.name,
         extra: { sessionId },
-      });
+      })
     }
 
-    this.emitSessionEvent(sessionId);
+    this.emitSessionEvent(sessionId)
 
     return {
       originalname: meta.originalname,
       mimetype: downloaded.mimetype || meta.mimetype,
       bytes: downloaded.bytes,
       sha256: meta.sha256,
-    };
+    }
   }
 
   async resetSession(sessionId: string, userId: string): Promise<boolean> {
-    this.cleanupExpiredState();
-    const session = this.sessions.get(sessionId);
+    this.cleanupExpiredState()
+    const session = this.sessions.get(sessionId)
     if (!session) {
       // Session already cleaned up or reset by peer
-      return true;
+      return true
     }
-    if (!session.users[userId]) return false;
+    if (!session.users[userId]) return false
 
-    const peerId = this.getPeerId(sessionId, userId);
-    const me = session.users[userId];
-    const peer = peerId ? session.users[peerId] : null;
+    const peerId = this.getPeerId(sessionId, userId)
+    const me = session.users[userId]
+    const peer = peerId ? session.users[peerId] : null
 
     // Check if exchange reached unlocked state
-    const isUnlocked = Boolean(
-      me?.file && me?.validated && peer?.file && peer?.validated,
-    );
+    const isUnlocked = Boolean(me?.file && me?.validated && peer?.file && peer?.validated)
 
     if (isUnlocked) {
-      const bothDownloaded = Boolean(me?.downloaded && peer?.downloaded);
-      const nowMs = Date.now();
-      const graceExpiresAt = session.gracePeriodExpiresAt;
-      const gracePeriodActive =
-        graceExpiresAt != null && nowMs < graceExpiresAt;
+      const bothDownloaded = Boolean(me?.downloaded && peer?.downloaded)
+      const nowMs = Date.now()
+      const graceExpiresAt = session.gracePeriodExpiresAt
+      const gracePeriodActive = graceExpiresAt != null && nowMs < graceExpiresAt
 
       // If one of the parties hasn't downloaded yet AND grace period is still active, block reset!
       if (!bothDownloaded && gracePeriodActive && graceExpiresAt != null) {
-        const remainingSeconds = Math.max(
-          1,
-          Math.ceil((graceExpiresAt - nowMs) / 1000),
-        );
+        const remainingSeconds = Math.max(1, Math.ceil((graceExpiresAt - nowMs) / 1000))
         throw new HttpException(
           `Cannot reset while exchange is unlocked and grace period is active (${remainingSeconds}s remaining). Wait for peer to download.`,
           HttpStatus.FORBIDDEN,
-        );
+        )
       }
     }
 
-    const paths: string[] = [];
+    const paths: string[] = []
     for (const userKey in session.users) {
-      const file = session.users[userKey]?.file;
-      paths.push(...this.storagePathsForFile(file));
+      const file = session.users[userKey]?.file
+      paths.push(...this.storagePathsForFile(file))
     }
 
     if (paths.length > 0) {
-      await this.removePaths(paths);
+      await this.removePaths(paths)
     }
 
-    this.revokeSessionInvite(sessionId);
-    this.bumpSessionEpoch(sessionId);
-    this.sessions.delete(sessionId);
-    this.emitSessionEvent(sessionId, 'session_reset');
+    this.revokeSessionInvite(sessionId)
+    this.bumpSessionEpoch(sessionId)
+    this.sessions.delete(sessionId)
+    this.emitSessionEvent(sessionId, 'session_reset')
     logApiInfo({
       route: 'internal',
       message: 'session_reset',
       context: ExchangeService.name,
       extra: { sessionId, actorUserId: userId },
-    });
-    return true;
+    })
+    return true
   }
 }

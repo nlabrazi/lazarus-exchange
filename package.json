@@ -2,18 +2,20 @@
   "name": "lazarus-exchange",
   "private": true,
   "scripts": {
-    "check": "biome check .",
-    "check:write": "biome check --write .",
     "dev": "concurrently \"npm run dev:api\" \"npm run dev:ui\"",
     "dev:api": "cd api && npm run start:dev",
     "dev:ui": "serve -s ui -l 5173",
+    "build": "cd api && npm run build",
+    "check": "biome check .",
+    "check:write": "biome check --write .",
     "format": "biome format --write .",
     "lint": "biome lint .",
+    "test": "cd api && npm test -- --runInBand",
     "test:e2e": "playwright test"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.4.14",
-    "@playwright/test": "^1.63.0",
+    "@nlabrazi/config-biome": "^0.2.0",
+    "@nlabrazi/config-playwright": "^0.1.0",
     "concurrently": "^8.2.2",
     "serve": "^14.2.6"
   }

@@ -1,19 +1,19 @@
-import { AUTH_TOKEN_STORAGE_KEY } from './config.js';
+import { AUTH_TOKEN_STORAGE_KEY } from './config.js'
 import {
   clearAuthToken,
   clearInviteCode,
   getInviteCode,
   getAuthToken as getSessionAuthToken,
   setAuthToken,
-} from './session.js';
+} from './session.js'
 
 function replaceInvitePathInHistory() {
-  const joinIndex = location.pathname.lastIndexOf('/join/');
-  if (joinIndex < 0) return;
+  const joinIndex = location.pathname.lastIndexOf('/join/')
+  if (joinIndex < 0) return
 
-  const basePath = location.pathname.slice(0, joinIndex) || '/';
-  const nextUrl = `${basePath}${location.search || ''}${location.hash || ''}`;
-  history.replaceState(null, '', nextUrl);
+  const basePath = location.pathname.slice(0, joinIndex) || '/'
+  const nextUrl = `${basePath}${location.search || ''}${location.hash || ''}`
+  history.replaceState(null, '', nextUrl)
 }
 
 export function createAuthManager({
@@ -25,9 +25,9 @@ export function createAuthManager({
 }) {
   function loadStoredAuthToken() {
     try {
-      return sessionStorage.getItem(AUTH_TOKEN_STORAGE_KEY) || '';
+      return sessionStorage.getItem(AUTH_TOKEN_STORAGE_KEY) || ''
     } catch {
-      return '';
+      return ''
     }
   }
 
@@ -35,7 +35,7 @@ export function createAuthManager({
     try {
       // Keep auth in sessionStorage to survive refreshes without persisting across
       // browser restarts or unrelated tabs on this origin.
-      sessionStorage.setItem(AUTH_TOKEN_STORAGE_KEY, token);
+      sessionStorage.setItem(AUTH_TOKEN_STORAGE_KEY, token)
     } catch {
       // noop
     }
@@ -43,122 +43,117 @@ export function createAuthManager({
 
   function clearStoredAuthToken() {
     try {
-      sessionStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
+      sessionStorage.removeItem(AUTH_TOKEN_STORAGE_KEY)
     } catch {
       // noop
     }
   }
 
   function clearAuthState() {
-    clearAuthToken();
-    clearStoredAuthToken();
+    clearAuthToken()
+    clearStoredAuthToken()
   }
 
   function applyAuthToken(token, { persist = true } = {}) {
-    if (!setAuthToken(token)) return false;
-    if (persist) saveStoredAuthToken(token);
-    return true;
+    if (!setAuthToken(token)) return false
+    if (persist) saveStoredAuthToken(token)
+    return true
   }
 
   async function processBadResponse(context, res) {
-    await handleBadResponse(context, res);
+    await handleBadResponse(context, res)
     if (res.status === 401) {
-      clearAuthState();
+      clearAuthState()
     }
   }
 
   function getAuthToken() {
-    return getSessionAuthToken();
+    return getSessionAuthToken()
   }
 
   function getAuthTokenOrWarn() {
-    const authToken = getSessionAuthToken();
+    const authToken = getSessionAuthToken()
     if (!authToken) {
-      showToast('Session token missing. Refresh and retry.', 'error');
-      logStatus('❌ Session token missing. Refresh and retry. █');
-      return null;
+      showToast('Session token missing. Refresh and retry.', 'error')
+      logStatus('❌ Session token missing. Refresh and retry. █')
+      return null
     }
-    return authToken;
+    return authToken
   }
 
   async function issueFreshToken() {
-    const res = await apiClient.createToken();
+    const res = await apiClient.createToken()
     if (!res.ok) {
-      await processBadResponse('Session init', res);
-      return false;
+      await processBadResponse('Session init', res)
+      return false
     }
 
-    const data = await res.json().catch(() => null);
+    const data = await res.json().catch(() => null)
     if (!data?.token || !applyAuthToken(data.token)) {
-      showToast('Invalid session token received from server.', 'error');
-      logStatus('❌ Invalid session token received from server. █');
-      return false;
+      showToast('Invalid session token received from server.', 'error')
+      logStatus('❌ Invalid session token received from server. █')
+      return false
     }
 
-    return true;
+    return true
   }
 
   async function acceptInviteIfPresent() {
-    const inviteCode = getInviteCode();
-    if (!inviteCode) return false;
+    const inviteCode = getInviteCode()
+    if (!inviteCode) return false
 
-    const res = await apiClient.acceptInvite(inviteCode);
+    const res = await apiClient.acceptInvite(inviteCode)
     if (!res.ok) {
-      await processBadResponse('Invite accept', res);
-      return false;
+      await processBadResponse('Invite accept', res)
+      return false
     }
 
-    const data = await res.json().catch(() => null);
+    const data = await res.json().catch(() => null)
     if (!data?.token || !applyAuthToken(data.token)) {
-      showToast('Invalid token returned from invite accept.', 'error');
-      logStatus('❌ Invalid token returned from invite accept. █');
-      return false;
+      showToast('Invalid token returned from invite accept.', 'error')
+      logStatus('❌ Invalid token returned from invite accept. █')
+      return false
     }
 
-    clearInviteCode();
-    replaceInvitePathInHistory();
-    return true;
+    clearInviteCode()
+    replaceInvitePathInHistory()
+    return true
   }
 
   async function ensureSessionIdentity() {
-    const inviteCode = getInviteCode();
+    const inviteCode = getInviteCode()
     if (inviteCode) {
-      return acceptInviteIfPresent();
+      return acceptInviteIfPresent()
     }
 
-    const storedToken = loadStoredAuthToken();
+    const storedToken = loadStoredAuthToken()
     if (storedToken) {
       if (applyAuthToken(storedToken, { persist: false })) {
-        return true;
+        return true
       }
-      clearAuthState();
+      clearAuthState()
     }
 
-    return issueFreshToken();
+    return issueFreshToken()
   }
 
   async function runAuthedRequest(context, requestFn) {
     // Centralize auth/error handling so action handlers stay small and predictable.
-    const authToken = getAuthTokenOrWarn();
-    if (!authToken) return null;
+    const authToken = getAuthTokenOrWarn()
+    if (!authToken) return null
 
     try {
-      const res = await requestFn(authToken);
+      const res = await requestFn(authToken)
       if (!res.ok) {
-        await processBadResponse(context, res);
-        return null;
+        await processBadResponse(context, res)
+        return null
       }
-      return res;
+      return res
     } catch (error) {
-      devLog(`${context} network error`, error);
-      showToast(
-        'Network error. Please check your connection and try again.',
-        'error',
-      );
-      logStatus(
-        '❌ Network error. Please check your connection and try again. █',
-      );
-      return null;
+      devLog(`${context} network error`, error)
+      showToast('Network error. Please check your connection and try again.', 'error')
+      logStatus('❌ Network error. Please check your connection and try again. █')
+      return null
     }
   }
 
@@ -167,5 +162,5 @@ export function createAuthManager({
     getAuthToken,
     issueFreshToken,
     runAuthedRequest,
-  };
+  }
 }
