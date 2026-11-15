@@ -16,10 +16,8 @@ pipeline {
 
         stage('Install') {
             steps {
-                sh 'npm ci'
-                dir('api') {
-                    sh 'npm ci'
-                }
+                npmCi()
+                npmCi(workingDir: 'api', useGithubPackages: false)
             }
         }
 
@@ -29,19 +27,15 @@ pipeline {
             }
         }
 
-        stage('API unit tests') {
+        stage('Unit tests') {
             steps {
-                dir('api') {
-                    sh 'npm test -- --runInBand'
-                }
+                sh 'npm test'
             }
         }
 
-        stage('API build') {
+        stage('Build') {
             steps {
-                dir('api') {
-                    sh 'npm run build'
-                }
+                sh 'npm run build'
             }
         }
     }

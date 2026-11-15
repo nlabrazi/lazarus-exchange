@@ -1,5 +1,5 @@
 export function friendlyErrorFromApi({ status, text, json, context }) {
-  const raw = text || (json ? JSON.stringify(json) : '');
+  const raw = text || (json ? JSON.stringify(json) : '')
   const message =
     typeof json?.message === 'string'
       ? json.message
@@ -7,27 +7,27 @@ export function friendlyErrorFromApi({ status, text, json, context }) {
         ? json.message[0]
         : typeof json?.error === 'string'
           ? json.error
-          : '';
+          : ''
 
   if (status === 400) {
     if (message === 'Upload a file before validating') {
       return {
         user: 'Upload your own file before sending validation.',
         dev: { status, raw },
-      };
+      }
     }
 
     return {
       user: 'Invalid request. Please refresh the page and try again.',
       dev: { status, raw },
-    };
+    }
   }
 
   if (status === 401) {
     return {
       user: 'Unauthorized access. Your session link may be invalid.',
       dev: { status, raw },
-    };
+    }
   }
 
   if (status === 403) {
@@ -39,83 +39,80 @@ export function friendlyErrorFromApi({ status, text, json, context }) {
       return {
         user: 'Download stays locked until both users upload and validate.',
         dev: { status, raw },
-      };
+      }
     }
 
-    if (
-      message?.includes('grace period is active') ||
-      raw.includes('grace period is active')
-    ) {
+    if (message?.includes('grace period is active') || raw.includes('grace period is active')) {
       return {
         user: 'Reset blocked: Peer has not downloaded yet and the grace period is active.',
         dev: { status, raw },
-      };
+      }
     }
 
     return {
       user: 'Access denied. Action not permitted in current session state.',
       dev: { status, raw },
-    };
+    }
   }
 
   if (status === 404) {
     return {
       user: 'Session not found. It may have expired.',
       dev: { status, raw },
-    };
+    }
   }
 
   if (status === 409) {
     return {
       user: 'This invite cannot be used because the session already has a peer.',
       dev: { status, raw },
-    };
+    }
   }
 
   if (status === 410) {
     return {
       user: 'This invite link is no longer valid (expired or already used).',
       dev: { status, raw },
-    };
+    }
   }
 
   if (status === 413) {
     return {
       user: 'File too large. Please upload a smaller file.',
       dev: { status, raw },
-    };
+    }
   }
 
   if (status === 415) {
     return {
       user: 'File type not allowed. Accepted: JPG, PNG, WEBP, PDF, TXT.',
       dev: { status, raw },
-    };
+    }
   }
 
   if (status === 429) {
     return {
       user: 'Too many requests. Please wait a few seconds before trying again.',
       dev: { status, raw },
-    };
+    }
   }
 
   if (status === 502) {
     return {
       user: 'Temporary server issue. Please try again shortly.',
       dev: { status, raw },
-    };
+    }
   }
 
   if (status >= 500) {
     return {
       user: 'A server error occurred. Please try again later.',
       dev: { status, raw },
-    };
+    }
   }
 
   return {
     user: 'An unexpected error occurred. Please try again.',
     dev: { status, raw },
-  };
+  }
 }

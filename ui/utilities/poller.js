@@ -6,209 +6,204 @@ export function createStatusPoller({
   config,
   leaderStorageKey,
 }) {
-  let pollTimer = null;
-  let leaderTimer = null;
-  let pollDelayMs = config.minDelayMs;
-  let lastStatusSignature = '';
-  let isLeader = false;
+  let pollTimer = null
+  let leaderTimer = null
+  let pollDelayMs = config.minDelayMs
+  let lastStatusSignature = ''
+  let isLeader = false
 
-  let eventSource = null;
+  let eventSource = null
 
   function setPollDelay(ms) {
-    pollDelayMs = Math.max(config.minDelayMs, Math.min(config.maxDelayMs, ms));
+    pollDelayMs = Math.max(config.minDelayMs, Math.min(config.maxDelayMs, ms))
   }
 
   function currentBaseDelay() {
-    if (document.hidden) return config.hiddenDelayMs;
-    return pollDelayMs;
+    if (document.hidden) return config.hiddenDelayMs
+    return pollDelayMs
   }
 
   function statusSignature(status) {
-    const me = status?.me;
-    if (!me) return '';
+    const me = status?.me
+    if (!me) return ''
 
-    const peer = status.peer || {};
+    const peer = status.peer || {}
     return `${status.state || ''}|${Number(Boolean(me.uploaded))}|${Number(
       Boolean(me.validated),
     )}|${Number(Boolean(me.downloaded))}|${Number(Boolean(me.previewReady))}|${
       me.sha256 || ''
     }|${Number(Boolean(peer.uploaded))}|${Number(Boolean(peer.validated))}|${Number(
       Boolean(peer.downloaded),
-    )}|${Number(Boolean(peer.previewReady))}|${peer.sha256 || ''}`;
+    )}|${Number(Boolean(peer.previewReady))}|${peer.sha256 || ''}`
   }
 
   function handleStatusPayload(status) {
-    if (!status?.me) return;
+    if (!status?.me) return
 
-    const newSignature = statusSignature(status);
-    const changed = newSignature !== lastStatusSignature;
-    lastStatusSignature = newSignature;
+    const newSignature = statusSignature(status)
+    const changed = newSignature !== lastStatusSignature
+    lastStatusSignature = newSignature
 
     if (changed) {
-      onStatus(status);
-      setPollDelay(config.minDelayMs);
+      onStatus(status)
+      setPollDelay(config.minDelayMs)
     }
   }
 
   function connectEventSource() {
-    if (typeof EventSource === 'undefined') return;
+    if (typeof EventSource === 'undefined') return
 
-    const authToken = getAuthToken();
-    if (!authToken) return;
+    const authToken = getAuthToken()
+    if (!authToken) return
 
     if (eventSource) {
-      eventSource.close();
-      eventSource = null;
+      eventSource.close()
+      eventSource = null
     }
 
     try {
-      const url = apiClient.getEventsUrl(authToken);
-      eventSource = new EventSource(url);
+      const url = apiClient.getEventsUrl(authToken)
+      eventSource = new EventSource(url)
 
       eventSource.addEventListener('status', (event) => {
         try {
-          const status = JSON.parse(event.data);
-          handleStatusPayload(status);
+          const status = JSON.parse(event.data)
+          handleStatusPayload(status)
         } catch {
           // ignore parse errors
         }
-      });
+      })
 
       eventSource.addEventListener('reset', () => {
-        resetState();
+        resetState()
         if (typeof onReset === 'function') {
-          onReset();
+          onReset()
         }
-      });
+      })
 
       eventSource.onerror = () => {
         // EventSource automatically retries, fallback poller provides redundancy
-      };
+      }
     } catch {
       // EventSource failed, fallback to polling
     }
   }
 
   function electLeader() {
-    const now = Date.now();
+    const now = Date.now()
 
     try {
-      const current = Number(localStorage.getItem(leaderStorageKey) || '0');
+      const current = Number(localStorage.getItem(leaderStorageKey) || '0')
       if (!current || now - current > config.leaderTtlMs) {
-        localStorage.setItem(leaderStorageKey, String(now));
-        isLeader = true;
+        localStorage.setItem(leaderStorageKey, String(now))
+        isLeader = true
       } else {
-        isLeader = false;
+        isLeader = false
       }
     } catch {
       // localStorage unavailable: keep polling on this tab
-      isLeader = true;
+      isLeader = true
     }
   }
 
   function startLeaderHeartbeat() {
-    electLeader();
-    if (leaderTimer) clearInterval(leaderTimer);
+    electLeader()
+    if (leaderTimer) clearInterval(leaderTimer)
 
     leaderTimer = setInterval(() => {
       if (isLeader) {
         try {
-          localStorage.setItem(leaderStorageKey, String(Date.now()));
+          localStorage.setItem(leaderStorageKey, String(Date.now()))
         } catch {
           // noop
         }
       }
-      electLeader();
-    }, config.leaderHeartbeatMs);
+      electLeader()
+    }, config.leaderHeartbeatMs)
   }
 
   function schedule(nextDelay) {
-    if (pollTimer) clearTimeout(pollTimer);
-    pollTimer = setTimeout(pollStatus, nextDelay);
+    if (pollTimer) clearTimeout(pollTimer)
+    pollTimer = setTimeout(pollStatus, nextDelay)
   }
 
   async function pollStatus() {
     if (!isLeader) {
-      schedule(config.nonLeaderDelayMs);
-      return;
+      schedule(config.nonLeaderDelayMs)
+      return
     }
 
-    const authToken = getAuthToken();
+    const authToken = getAuthToken()
     if (!authToken) {
-      schedule(config.nonLeaderDelayMs);
-      return;
+      schedule(config.nonLeaderDelayMs)
+      return
     }
 
     try {
-      const res = await apiClient.status(authToken, { cache: 'no-store' });
+      const res = await apiClient.status(authToken, { cache: 'no-store' })
 
       if (!res.ok) {
         if (res.status === 401 && typeof onReset === 'function') {
-          onReset();
-          return;
+          onReset()
+          return
         }
-        const backoff = Math.min(config.maxDelayMs, currentBaseDelay() * 2);
-        setPollDelay(backoff);
-        schedule(backoff);
-        return;
+        const backoff = Math.min(config.maxDelayMs, currentBaseDelay() * 2)
+        setPollDelay(backoff)
+        schedule(backoff)
+        return
       }
 
-      const status = await res.json().catch(() => null);
+      const status = await res.json().catch(() => null)
 
       if (!status?.me) {
-        setPollDelay(
-          Math.min(
-            config.maxDelayMs,
-            currentBaseDelay() + config.idleIncrementMs,
-          ),
-        );
-        schedule(currentBaseDelay());
-        return;
+        setPollDelay(Math.min(config.maxDelayMs, currentBaseDelay() + config.idleIncrementMs))
+        schedule(currentBaseDelay())
+        return
       }
 
-      handleStatusPayload(status);
-      schedule(currentBaseDelay());
+      handleStatusPayload(status)
+      schedule(currentBaseDelay())
     } catch {
-      const backoff = Math.min(config.maxDelayMs, currentBaseDelay() * 2);
-      setPollDelay(backoff);
-      schedule(backoff);
+      const backoff = Math.min(config.maxDelayMs, currentBaseDelay() * 2)
+      setPollDelay(backoff)
+      schedule(backoff)
     }
   }
 
   function start() {
-    connectEventSource();
-    startLeaderHeartbeat();
-    schedule(config.firstPollDelayMs);
+    connectEventSource()
+    startLeaderHeartbeat()
+    schedule(config.firstPollDelayMs)
   }
 
   function stop() {
     if (eventSource) {
-      eventSource.close();
-      eventSource = null;
+      eventSource.close()
+      eventSource = null
     }
 
     if (pollTimer) {
-      clearTimeout(pollTimer);
-      pollTimer = null;
+      clearTimeout(pollTimer)
+      pollTimer = null
     }
 
     if (leaderTimer) {
-      clearInterval(leaderTimer);
-      leaderTimer = null;
+      clearInterval(leaderTimer)
+      leaderTimer = null
     }
   }
 
   function scheduleSoon(delayMs = config.wakeupPollDelayMs) {
     if (!eventSource || eventSource.readyState !== EventSource.OPEN) {
-      connectEventSource();
+      connectEventSource()
     }
-    schedule(delayMs);
+    schedule(delayMs)
   }
 
   function resetState() {
-    lastStatusSignature = '';
-    setPollDelay(config.minDelayMs);
-    connectEventSource();
+    lastStatusSignature = ''
+    setPollDelay(config.minDelayMs)
+    connectEventSource()
   }
 
   return {
@@ -216,5 +211,5 @@ export function createStatusPoller({
     stop,
     scheduleSoon,
     resetState,
-  };
+  }
 }

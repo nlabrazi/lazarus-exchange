@@ -1,11 +1,6 @@
-import { createApiClient } from './utilities/api.js';
-import { createAuthManager } from './utilities/auth.js';
-import {
-  API_BASE,
-  apiOverride,
-  LEADER_STORAGE_KEY,
-  POLL_CONFIG,
-} from './utilities/config.js';
+import { createApiClient } from './utilities/api.js'
+import { createAuthManager } from './utilities/auth.js'
+import { API_BASE, apiOverride, LEADER_STORAGE_KEY, POLL_CONFIG } from './utilities/config.js'
 import {
   clearPreviewImage,
   clearSelectedFile,
@@ -19,44 +14,39 @@ import {
   setShareLinkValue,
   setUserDisplay,
   showToast,
-} from './utilities/dom.js';
-import { friendlyErrorFromApi } from './utilities/errors.js';
-import { createStatusPoller } from './utilities/poller.js';
-import {
-  buildShareLink,
-  getSessionState,
-  initSessionFromUrl,
-} from './utilities/session.js';
+} from './utilities/dom.js'
+import { friendlyErrorFromApi } from './utilities/errors.js'
+import { createStatusPoller } from './utilities/poller.js'
+import { buildShareLink, getSessionState, initSessionFromUrl } from './utilities/session.js'
 
 const DEBUG =
-  location.hostname === 'localhost' ||
-  new URLSearchParams(location.search).get('debug') === '1';
+  location.hostname === 'localhost' || new URLSearchParams(location.search).get('debug') === '1'
 
 function devLog(...args) {
-  if (DEBUG) console.log('[lazarus]', ...args);
+  if (DEBUG) console.log('[lazarus]', ...args)
 }
 
 function formatBytes(bytes) {
-  if (!Number.isFinite(bytes) || bytes < 0) return 'unknown size';
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+  if (!Number.isFinite(bytes) || bytes < 0) return 'unknown size'
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`
 }
 
 function bindPreviewImageEvents() {
-  const previewImage = document.getElementById('previewImage');
-  if (!previewImage) return;
+  const previewImage = document.getElementById('previewImage')
+  if (!previewImage) return
   previewImage.addEventListener('error', () => {
-    showToast('Preview URL expired. Click PREVIEW to refresh.', 'error');
-    logStatus('⚠️ Preview URL expired. Click PREVIEW to refresh. █');
-  });
+    showToast('Preview URL expired. Click PREVIEW to refresh.', 'error')
+    logStatus('⚠️ Preview URL expired. Click PREVIEW to refresh. █')
+  })
 }
 
 async function handleBadResponse(context, res) {
-  const text = await res.text().catch(() => '');
-  let json = null;
+  const text = await res.text().catch(() => '')
+  let json = null
   try {
-    json = JSON.parse(text);
+    json = JSON.parse(text)
   } catch {}
 
   const { user, dev } = friendlyErrorFromApi({
@@ -64,14 +54,14 @@ async function handleBadResponse(context, res) {
     text,
     json,
     context,
-  });
-  devLog(`${context} failed`, dev);
+  })
+  devLog(`${context} failed`, dev)
 
-  showToast(user, 'error');
-  logStatus(`❌ ${user} █`);
+  showToast(user, 'error')
+  logStatus(`❌ ${user} █`)
 }
 
-const apiClient = createApiClient(API_BASE);
+const apiClient = createApiClient(API_BASE)
 
 const authManager = createAuthManager({
   apiClient,
@@ -79,19 +69,19 @@ const authManager = createAuthManager({
   logStatus,
   showToast,
   devLog,
-});
+})
 
 async function handleRemoteReset() {
-  await authManager.issueFreshToken();
-  await refreshSessionUi();
-  clearSelectedFile();
-  clearPreviewImage('Session was reset by peer.');
-  statusPoller.resetState();
-  statusPoller.scheduleSoon(500);
+  await authManager.issueFreshToken()
+  await refreshSessionUi()
+  clearSelectedFile()
+  clearPreviewImage('Session was reset by peer.')
+  statusPoller.resetState()
+  statusPoller.scheduleSoon(500)
 
-  clearStatusCache();
-  logStatus('🔄 Peer reset the session. A new session has started. █');
-  showToast('Peer reset the session. A new session has started.', 'info');
+  clearStatusCache()
+  logStatus('🔄 Peer reset the session. A new session has started. █')
+  showToast('Peer reset the session. A new session has started.', 'info')
 }
 
 const statusPoller = createStatusPoller({
@@ -101,207 +91,193 @@ const statusPoller = createStatusPoller({
   onReset: handleRemoteReset,
   config: POLL_CONFIG,
   leaderStorageKey: LEADER_STORAGE_KEY,
-});
+})
 
 async function refreshSessionUi() {
-  const { sessionId, userId } = getSessionState();
-  setSessionIdDisplay(sessionId || '-');
-  setUserDisplay(userId || '-');
+  const { sessionId, userId } = getSessionState()
+  setSessionIdDisplay(sessionId || '-')
+  setUserDisplay(userId || '-')
 
   const res = await authManager.runAuthedRequest('Share link', (token) =>
     apiClient.createInvite(token),
-  );
+  )
   if (!res) {
-    setShareLinkValue('');
-    return;
+    setShareLinkValue('')
+    return
   }
 
-  const data = await res.json().catch(() => null);
-  setShareLinkValue(buildShareLink(data?.inviteCode || '', apiOverride));
+  const data = await res.json().catch(() => null)
+  setShareLinkValue(buildShareLink(data?.inviteCode || '', apiOverride))
 }
 
 async function copySessionLink() {
-  const link = getShareLinkValue();
+  const link = getShareLinkValue()
   if (!link) {
-    showToast('Share link unavailable right now.', 'error');
-    logStatus('⚠️ Share link unavailable right now. █');
-    return;
+    showToast('Share link unavailable right now.', 'error')
+    logStatus('⚠️ Share link unavailable right now. █')
+    return
   }
 
   try {
-    await navigator.clipboard.writeText(link);
-    showToast('Share link copied to clipboard.', 'success');
+    await navigator.clipboard.writeText(link)
+    showToast('Share link copied to clipboard.', 'success')
   } catch (error) {
-    showToast('Unable to copy link. Clipboard access failed.', 'error');
-    logStatus(`❌ Clipboard error: ${error?.message || String(error)} █`);
+    showToast('Unable to copy link. Clipboard access failed.', 'error')
+    logStatus(`❌ Clipboard error: ${error?.message || String(error)} █`)
   }
 }
 
 async function upload() {
-  const file = getSelectedFile();
+  const file = getSelectedFile()
   if (!file) {
-    showToast('No file selected.', 'error');
-    logStatus('⚠️ No file selected █');
-    return;
+    showToast('No file selected.', 'error')
+    logStatus('⚠️ No file selected █')
+    return
   }
 
-  const formData = new FormData();
-  formData.append('file', file);
+  const formData = new FormData()
+  formData.append('file', file)
 
   const res = await authManager.runAuthedRequest('Upload', (token) =>
     apiClient.upload(token, formData),
-  );
-  if (!res) return;
+  )
+  if (!res) return
 
-  const data = await res.json().catch(() => null);
+  const data = await res.json().catch(() => null)
   if (data?.maxFileMb) {
-    logStatus(
-      `📤 File uploaded (max ${data.maxFileMb}MB). Waiting for peer... █`,
-    );
-    showToast(
-      `Upload complete (max ${data.maxFileMb}MB). Waiting for peer.`,
-      'success',
-    );
+    logStatus(`📤 File uploaded (max ${data.maxFileMb}MB). Waiting for peer... █`)
+    showToast(`Upload complete (max ${data.maxFileMb}MB). Waiting for peer.`, 'success')
   } else {
-    logStatus('📤 File uploaded. Waiting for peer... █');
-    showToast('File uploaded. Waiting for peer.', 'success');
+    logStatus('📤 File uploaded. Waiting for peer... █')
+    showToast('File uploaded. Waiting for peer.', 'success')
   }
 
-  statusPoller.scheduleSoon(1000);
+  statusPoller.scheduleSoon(1000)
 }
 
 async function preview() {
-  const res = await authManager.runAuthedRequest('Preview', (token) =>
-    apiClient.preview(token),
-  );
-  if (!res) return;
+  const res = await authManager.runAuthedRequest('Preview', (token) => apiClient.preview(token))
+  if (!res) return
 
-  const data = await res.json().catch(() => null);
+  const data = await res.json().catch(() => null)
 
   if (!data?.fileId) {
-    clearPreviewImage('No preview loaded yet.');
-    logStatus('⏳ No file from peer yet... █');
-    showToast('No file from peer yet.', 'error');
-    return;
+    clearPreviewImage('No preview loaded yet.')
+    logStatus('⏳ No file from peer yet... █')
+    showToast('No file from peer yet.', 'error')
+    return
   }
 
   if (data.previewStatus !== 'ready') {
-    clearPreviewImage('Preview is still processing.');
-    logStatus('⏳ Peer preview is still processing... █');
-    showToast('Peer preview is still processing.', 'error');
-    return;
+    clearPreviewImage('Preview is still processing.')
+    logStatus('⏳ Peer preview is still processing... █')
+    showToast('Peer preview is still processing.', 'error')
+    return
   }
 
-  const previewUrlRes = await authManager.runAuthedRequest(
-    'Preview URL',
-    (token) => apiClient.previewUrl(token, data.fileId),
-  );
-  if (!previewUrlRes) return;
+  const previewUrlRes = await authManager.runAuthedRequest('Preview URL', (token) =>
+    apiClient.previewUrl(token, data.fileId),
+  )
+  if (!previewUrlRes) return
 
-  const previewPayload = await previewUrlRes.json().catch(() => null);
+  const previewPayload = await previewUrlRes.json().catch(() => null)
   if (!previewPayload?.previewUrl) {
-    clearPreviewImage('Preview URL unavailable.');
-    logStatus('⚠️ Preview URL unavailable █');
-    showToast('Preview URL unavailable.', 'error');
-    return;
+    clearPreviewImage('Preview URL unavailable.')
+    logStatus('⚠️ Preview URL unavailable █')
+    showToast('Preview URL unavailable.', 'error')
+    return
   }
 
-  const caption = `${data.originalname} • ${formatBytes(data.size)} • ${data.mimetype}`;
-  setPreviewImage(previewPayload.previewUrl, caption);
-  logStatus(
-    `👀 Secure preview loaded:\n${data.originalname} (${formatBytes(data.size)}) █`,
-  );
-  showToast(`Preview ready: ${data.originalname}`, 'success');
+  const caption = `${data.originalname} • ${formatBytes(data.size)} • ${data.mimetype}`
+  setPreviewImage(previewPayload.previewUrl, caption)
+  logStatus(`👀 Secure preview loaded:\n${data.originalname} (${formatBytes(data.size)}) █`)
+  showToast(`Preview ready: ${data.originalname}`, 'success')
 }
 
 async function validate() {
-  const res = await authManager.runAuthedRequest('Validation', (token) =>
-    apiClient.validate(token),
-  );
-  if (!res) return;
+  const res = await authManager.runAuthedRequest('Validation', (token) => apiClient.validate(token))
+  if (!res) return
 
-  logStatus('✅ Validation confirmed. Waiting for peer to validate... █');
-  showToast('Validation sent. Waiting for peer.', 'success');
-  statusPoller.scheduleSoon(1000);
+  logStatus('✅ Validation confirmed. Waiting for peer to validate... █')
+  showToast('Validation sent. Waiting for peer.', 'success')
+  statusPoller.scheduleSoon(1000)
 }
 
 async function download() {
-  const res = await authManager.runAuthedRequest('Download', (token) =>
-    apiClient.download(token),
-  );
-  if (!res) return;
+  const res = await authManager.runAuthedRequest('Download', (token) => apiClient.download(token))
+  if (!res) return
 
-  const disposition = res.headers.get('Content-Disposition') || '';
-  const match = /filename="([^"]+)"/i.exec(disposition);
-  const filename = match?.[1] || 'exchange_file';
+  const disposition = res.headers.get('Content-Disposition') || ''
+  const match = /filename="([^"]+)"/i.exec(disposition)
+  const filename = match?.[1] || 'exchange_file'
 
-  const blob = await res.blob();
-  const link = document.createElement('a');
-  link.href = URL.createObjectURL(blob);
-  link.download = filename;
-  link.click();
-  URL.revokeObjectURL(link.href);
+  const blob = await res.blob()
+  const link = document.createElement('a')
+  link.href = URL.createObjectURL(blob)
+  link.download = filename
+  link.click()
+  URL.revokeObjectURL(link.href)
 
-  logStatus('⬇️ Download started. Saving file... █');
-  showToast(`Download started: ${filename}`, 'success');
+  logStatus('⬇️ Download started. Saving file... █')
+  showToast(`Download started: ${filename}`, 'success')
 }
 
 async function resetSession() {
-  const token = authManager.getAuthToken();
+  const token = authManager.getAuthToken()
   if (token) {
     try {
-      const res = await apiClient.reset(token);
+      const res = await apiClient.reset(token)
       if (!res.ok) {
         if (res.status === 403) {
           // Anti-scam protection: grace period is active, peer has not downloaded yet
-          await handleBadResponse('Reset', res);
-          return;
+          await handleBadResponse('Reset', res)
+          return
         }
         // If 401 or 404, the session was already revoked or reset on server.
         // We smoothly proceed to reset locally and create a fresh session.
       }
     } catch (error) {
-      devLog('Reset request network error', error);
+      devLog('Reset request network error', error)
     }
   }
 
-  const created = await authManager.issueFreshToken();
-  if (!created) return;
+  const created = await authManager.issueFreshToken()
+  if (!created) return
 
-  await refreshSessionUi();
-  clearSelectedFile();
-  clearPreviewImage('Session reset. No preview loaded yet.');
-  statusPoller.resetState();
-  statusPoller.scheduleSoon(500);
+  await refreshSessionUi()
+  clearSelectedFile()
+  clearPreviewImage('Session reset. No preview loaded yet.')
+  statusPoller.resetState()
+  statusPoller.scheduleSoon(500)
 
-  clearStatusCache();
-  logStatus('🔄 Session reset. Share the new link with your peer. █');
-  showToast('Session reset. Share the new link with your peer.', 'success');
+  clearStatusCache()
+  logStatus('🔄 Session reset. Share the new link with your peer. █')
+  showToast('Session reset. Share the new link with your peer.', 'success')
 }
 
 async function init() {
-  initSessionFromUrl();
-  bindPreviewImageEvents();
+  initSessionFromUrl()
+  bindPreviewImageEvents()
 
-  const ready = await authManager.ensureSessionIdentity();
-  if (!ready) return;
+  const ready = await authManager.ensureSessionIdentity()
+  if (!ready) return
 
-  await refreshSessionUi();
-  clearPreviewImage();
-  logStatus('✨ Connected. Share the invite link to start exchanging. █');
+  await refreshSessionUi()
+  clearPreviewImage()
+  logStatus('✨ Connected. Share the invite link to start exchanging. █')
 
   document.addEventListener('visibilitychange', () => {
-    statusPoller.scheduleSoon();
-  });
+    statusPoller.scheduleSoon()
+  })
 
-  statusPoller.start();
+  statusPoller.start()
 }
 
-window.copySessionLink = copySessionLink;
-window.upload = upload;
-window.preview = preview;
-window.validate = validate;
-window.download = download;
-window.resetSession = resetSession;
-window.addEventListener('beforeunload', () => statusPoller.stop());
-window.addEventListener('load', init);
+window.copySessionLink = copySessionLink
+window.upload = upload
+window.preview = preview
+window.validate = validate
+window.download = download
+window.resetSession = resetSession
+window.addEventListener('beforeunload', () => statusPoller.stop())
+window.addEventListener('load', init)

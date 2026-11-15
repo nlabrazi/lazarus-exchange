@@ -1,52 +1,52 @@
-import { Test, type TestingModule } from '@nestjs/testing';
-import { ApiRateLimitService } from '../security/api-rate-limit.service';
-import { ExchangeController } from './exchange.controller';
-import { ExchangeService } from './exchange.service';
+import { Test, type TestingModule } from '@nestjs/testing'
+import { ApiRateLimitService } from '../security/api-rate-limit.service'
+import { ExchangeController } from './exchange.controller'
+import { ExchangeService } from './exchange.service'
 
 type MockResponse = {
-  statusCode: number;
-  payload: unknown;
-  status: jest.Mock;
-  json: jest.Mock;
-  set: jest.Mock;
-  send: jest.Mock;
-};
+  statusCode: number
+  payload: unknown
+  status: jest.Mock
+  json: jest.Mock
+  set: jest.Mock
+  send: jest.Mock
+}
 
 function createMockResponse(): MockResponse {
-  const response = {} as MockResponse;
-  response.statusCode = 200;
-  response.payload = null;
+  const response = {} as MockResponse
+  response.statusCode = 200
+  response.payload = null
   response.status = jest.fn((code: number) => {
-    response.statusCode = code;
-    return response;
-  });
+    response.statusCode = code
+    return response
+  })
   response.json = jest.fn((body: unknown) => {
-    response.payload = body;
-    return response;
-  });
-  response.set = jest.fn();
-  response.send = jest.fn();
+    response.payload = body
+    return response
+  })
+  response.set = jest.fn()
+  response.send = jest.fn()
 
-  return response;
+  return response
 }
 
 describe('ExchangeController', () => {
-  let controller: ExchangeController;
+  let controller: ExchangeController
   let exchangeService: {
-    parseSessionToken: jest.Mock;
-    createSessionTokenForNewUser: jest.Mock;
-    createInvite: jest.Mock;
-    acceptInvite: jest.Mock;
-    uploadFile: jest.Mock;
-    getStatus: jest.Mock;
-    getPreview: jest.Mock;
-    getPreviewSignedUrl: jest.Mock;
-    validate: jest.Mock;
-    canDownload: jest.Mock;
-    getPeerFileDownload: jest.Mock;
-    resetSession: jest.Mock;
-    getSessionEventStream: jest.Mock;
-  };
+    parseSessionToken: jest.Mock
+    createSessionTokenForNewUser: jest.Mock
+    createInvite: jest.Mock
+    acceptInvite: jest.Mock
+    uploadFile: jest.Mock
+    getStatus: jest.Mock
+    getPreview: jest.Mock
+    getPreviewSignedUrl: jest.Mock
+    validate: jest.Mock
+    canDownload: jest.Mock
+    getPeerFileDownload: jest.Mock
+    resetSession: jest.Mock
+    getSessionEventStream: jest.Mock
+  }
 
   beforeEach(async () => {
     exchangeService = {
@@ -63,7 +63,7 @@ describe('ExchangeController', () => {
       getPeerFileDownload: jest.fn(),
       resetSession: jest.fn(),
       getSessionEventStream: jest.fn(),
-    };
+    }
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [ExchangeController],
@@ -80,54 +80,48 @@ describe('ExchangeController', () => {
           },
         },
       ],
-    }).compile();
+    }).compile()
 
-    controller = module.get<ExchangeController>(ExchangeController);
-  });
+    controller = module.get<ExchangeController>(ExchangeController)
+  })
 
   it('should be defined', () => {
-    expect(controller).toBeDefined();
-  });
+    expect(controller).toBeDefined()
+  })
 
   it('returns 403 on download when both parties have not validated yet', async () => {
     exchangeService.parseSessionToken.mockReturnValue({
       sessionId: 's_test',
       userId: 'u_test',
-    });
-    exchangeService.canDownload.mockReturnValue(false);
+    })
+    exchangeService.canDownload.mockReturnValue(false)
 
-    const response = createMockResponse();
+    const response = createMockResponse()
 
-    await controller.downloadByToken('Bearer test-token', response as never);
+    await controller.downloadByToken('Bearer test-token', response as never)
 
-    expect(exchangeService.canDownload).toHaveBeenCalledWith(
-      's_test',
-      'u_test',
-    );
-    expect(exchangeService.getPeerFileDownload).not.toHaveBeenCalled();
-    expect(response.status).toHaveBeenCalledWith(403);
+    expect(exchangeService.canDownload).toHaveBeenCalledWith('s_test', 'u_test')
+    expect(exchangeService.getPeerFileDownload).not.toHaveBeenCalled()
+    expect(response.status).toHaveBeenCalledWith(403)
     expect(response.json).toHaveBeenCalledWith({
       error: 'Both parties must validate first',
       message: 'Both parties must validate first',
-    });
-  });
+    })
+  })
 
   it('streams session events via SSE', (done) => {
     exchangeService.parseSessionToken.mockReturnValue({
       sessionId: 's_test',
       userId: 'u_test',
-    });
-    const fakeEvent = { data: { state: 'created' }, type: 'status' };
-    const { of } = require('rxjs');
-    exchangeService.getSessionEventStream.mockReturnValue(of(fakeEvent));
+    })
+    const fakeEvent = { data: { state: 'created' }, type: 'status' }
+    const { of } = require('rxjs')
+    exchangeService.getSessionEventStream.mockReturnValue(of(fakeEvent))
 
-    const observable = controller.streamSessionEvents(
-      {} as never,
-      'test-token',
-    );
+    const observable = controller.streamSessionEvents({} as never, 'test-token')
     observable.subscribe((event) => {
-      expect(event).toEqual(fakeEvent);
-      done();
-    });
-  });
-});
+      expect(event).toEqual(fakeEvent)
+      done()
+    })
+  })
+})
