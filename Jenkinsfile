@@ -1,10 +1,11 @@
 @Library('nabster-ci') _
 
 pipeline {
-    agent {
-        docker {
-            image 'node:22'
-        }
+    agent any
+
+    options {
+        timestamps()
+        disableConcurrentBuilds()
     }
 
     stages {
@@ -14,28 +15,58 @@ pipeline {
             }
         }
 
-        stage('Install') {
-            steps {
-                npmCi()
-                npmCi(workingDir: 'api', useGithubPackages: false)
+        stage('Node CI') {
+            agent {
+                docker {
+                    image 'node:22'
+                    reuseNode true
+                }
+            }
+
+            stages {
+                stage('Install') {
+                    steps {
+                        npmCi()
+                        npmCi(workingDir: 'api', useGithubPackages: false)
+                    }
+                }
+
+                stage('Check') {
+                    steps {
+                        sh 'npm run check'
+                    }
+                }
+
+                stage('Unit tests') {
+                    steps {
+                        sh 'npm test'
+                    }
+                }
+
+                stage('Build') {
+                    steps {
+                        sh 'npm run build'
+                    }
+                }
             }
         }
 
-        stage('Check') {
+        stage('Docker build & push') {
             steps {
-                sh 'npm run check'
-            }
-        }
-
-        stage('Unit tests') {
-            steps {
-                sh 'npm test'
-            }
-        }
-
-        stage('Build') {
-            steps {
-                sh 'npm run build'
+                dockerBuildAndPush(
+                    imageName: 'lazarus-exchange-api',
+                    repoName: 'lazarus-exchange',
+                    context: '.',
+                    dockerfile: 'api/Dockerfile',
+                    useGithubPackages: false
+                )
+                dockerBuildAndPush(
+                    imageName: 'lazarus-exchange-ui',
+                    repoName: 'lazarus-exchange',
+                    context: '.',
+                    dockerfile: 'ui/Dockerfile',
+                    useGithubPackages: false
+                )
             }
         }
     }
