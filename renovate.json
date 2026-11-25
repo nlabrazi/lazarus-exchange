@@ -1,4 +1,7 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["github>nlabrazi/dev-platform//configs/renovate/base"]
+  "extends": [
+    "github>nlabrazi/dev-platform//configs/renovate/base",
+    "github>nlabrazi/dev-platform//configs/renovate/automerge"
+  ]
 }
